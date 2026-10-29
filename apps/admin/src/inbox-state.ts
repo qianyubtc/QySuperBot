@@ -1,5 +1,15 @@
 type Data = Record<string, any>;
 export const visibleInboxGroups = (groups: Data[]) => groups.filter((group) => group.sync_enabled !== false);
+export function partitionInboxDeliveries(deliveries: Data[]) {
+  const active: Data[] = [],
+    history: Data[] = [];
+  for (const delivery of deliveries) {
+    if (delivery.status === 'succeeded') continue;
+    if (['failed', 'cancelled'].includes(delivery.status)) history.push(delivery);
+    else active.push(delivery);
+  }
+  return { active, history };
+}
 export type InboxSnapshot = {
   observed_at?: string;
   conversation: Data;

@@ -5,6 +5,7 @@ import {
   prependHistory,
   rememberSnapshot,
   visibleInboxGroups,
+  partitionInboxDeliveries,
   type InboxSnapshot,
 } from '../../admin/src/inbox-state.ts';
 
@@ -19,6 +20,40 @@ const snapshot = (from: number, through: number, hasMore: boolean): InboxSnapsho
   messages: messages(from, through),
   deliveries: [],
   pagination: { before: String(from).padStart(4, '0'), has_more: hasMore },
+});
+
+test('completed failures remain inspectable without being appended as the latest live chat', () => {
+  for (const platform of ['qq', 'telegram', 'binance']) {
+    const jobs = ['failed', 'cancelled', 'pending', 'in_flight', 'accepted', 'unknown', 'succeeded'].map(
+      (status) => ({
+        id: platform + ':' + status,
+        platform,
+        status,
+        last_error: status === 'failed' ? '账号未在线' : null,
+      }),
+    );
+    const before = JSON.stringify(jobs);
+    const { active, history } = partitionInboxDeliveries(jobs);
+    assert.deepEqual(
+      history.map((job) => job.status),
+      ['failed', 'cancelled'],
+    );
+    assert.deepEqual(
+      active.map((job) => job.status),
+      ['pending', 'in_flight', 'accepted', 'unknown'],
+    );
+    assert.equal(history[0]?.last_error, '账号未在线');
+    assert.equal(
+      JSON.stringify(jobs),
+      before,
+      'presentation must never clear or change real execution receipts',
+    );
+    jobs[0]!.status = 'succeeded';
+    assert.deepEqual(
+      partitionInboxDeliveries(jobs).history.map((job) => job.status),
+      ['cancelled'],
+    );
+  }
 });
 
 test('initial inbox groups hide deselected Telegram, QQ and Binance rooms while retaining other sources', () => {

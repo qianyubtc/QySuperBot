@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { api, RequestError, mediaUrl, openChatStream } from './api';
 import ModerationResult from './ModerationResult';
+import InboxDeliveryHistory from './InboxDeliveryHistory';
 import { ImageViewer } from './ConsoleTools';
 import {
   readInboxDrafts,
@@ -42,6 +43,7 @@ import {
   prependHistory,
   rememberSnapshot,
   visibleInboxGroups,
+  partitionInboxDeliveries,
   type InboxDirectory,
   type InboxSnapshot as Snapshot,
 } from './inbox-state';
@@ -449,7 +451,22 @@ export default function Inbox({
     snapshot?.conversations ?? previousConversations.current ?? initialGroups,
   ).map((group) => ({ ...directoryById.get(group.id), ...group }));
   const messages = snapshot?.messages ?? [];
-  const deliveries = snapshot?.deliveries.filter((d) => d.status !== 'succeeded') ?? [];
+  const { active: deliveries, history: pastDeliveries } = partitionInboxDeliveries(snapshot?.deliveries ?? []);
+  const lastDeliveryStates = useRef<{ groupId: string; states: Map<string, string> } | undefined>(undefined);
+  useEffect(() => {
+    if (!snapshot) return;
+    const previous = lastDeliveryStates.current;
+    if (
+      previous &&
+      previous.groupId === snapshot.conversation.id &&
+      snapshot.deliveries.some((job) => job.status === 'failed' && previous.states.get(job.id) !== 'failed')
+    )
+      toast('消息发送失败，可展开“历史发送记录”查看原因', true);
+    lastDeliveryStates.current = {
+      groupId: snapshot.conversation.id,
+      states: new Map(snapshot.deliveries.map((job) => [job.id, job.status])),
+    };
+  }, [snapshot?.deliveries, snapshot?.conversation.id]);
   const draft = id ? (drafts[id] ?? '') : '';
   const reply = id ? replies[id] : undefined;
   const replyState = reply && messages.find((m) => m.id === reply.id);
@@ -869,6 +886,11 @@ export default function Inbox({
                     {room?.connection?.state && room.connection.state !== 'connected' && (
                       <span className="inbox-room-connection"> · {room.connection.title}</span>
                     )}
+                    {snapshot && (
+                      <span className={`inbox-send-availability ${room?.can_send ? 'ready' : ''}`}>
+                        {' · '}{room?.can_send ? '可发送' : '暂不可发送'}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="inbox-room-actions">
@@ -976,6 +998,13 @@ export default function Inbox({
                   <button onClick={reconnect}>重新连接</button>
                 </div>
               )}
+              <InboxDeliveryHistory
+                key={id}
+                jobs={pastDeliveries}
+                canSend={!!room?.can_send}
+                retrying={retrying}
+                onRetry={(job) => void retryDelivery(job)}
+              />
               <div
                 className="inbox-history"
                 role="region"
@@ -1199,16 +1228,6 @@ export default function Inbox({
                               )}{' '}
                               {states[job.status] ?? job.status}
                             </span>
-                            {job.status === 'failed' && job.retryable && (
-                              <button
-                                className="chat-reply"
-                                disabled={retrying === job.id}
-                                onClick={() => void retryDelivery(job)}
-                              >
-                                <RefreshCw size={12} />
-                                重试
-                              </button>
-                            )}
                             {job.status === 'unknown' && (
                               <Link className="chat-reply" to={`/announcements?delivery=${job.id}`}>
                                 核对结果 <ChevronRight size={12} />

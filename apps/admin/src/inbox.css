@@ -258,6 +258,88 @@
   min-height: 0;
   background: #f8faf6;
 }
+.inbox-send-availability.ready {
+  color: #3e7653;
+}
+.inbox-delivery-history {
+  flex-shrink: 0;
+  background: #fffdf8;
+  border-bottom: 1px solid #e8e4d9;
+  color: #756440;
+}
+.inbox-delivery-history > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+.inbox-delivery-history > summary::-webkit-details-marker {
+  display: none;
+}
+.inbox-delivery-history > summary:focus-visible {
+  outline: 2px solid #709766;
+  outline-offset: -2px;
+}
+.inbox-delivery-count {
+  color: #877758;
+  margin-left: auto;
+}
+.inbox-delivery-history[open] .inbox-delivery-chevron {
+  transform: rotate(180deg);
+}
+.inbox-delivery-records {
+  max-height: min(35dvh, 260px);
+  overflow: auto;
+  padding: 0 16px 12px;
+  overscroll-behavior: contain;
+}
+.inbox-delivery-help,
+.inbox-delivery-reason {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.inbox-delivery-help {
+  color: #717c6f;
+}
+.inbox-delivery-record {
+  padding: 12px 0;
+  border-bottom: 1px solid #eee9df;
+}
+.inbox-delivery-record:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.inbox-delivery-record header,
+.inbox-delivery-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.inbox-delivery-record time {
+  color: #798575;
+  margin-left: auto;
+}
+.inbox-delivery-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #475744;
+  margin: 7px 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.inbox-delivery-actions {
+  margin-top: 8px;
+}
 .inbox-room-head {
   min-height: 78px;
   display: flex;

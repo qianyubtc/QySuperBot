@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DemoStore, DEMO_KEY } from '../src/demo/store.ts';
 import { clearDemoInbox } from '../src/demo/storage.ts';
+import { partitionInboxDeliveries } from '../src/inbox-state.ts';
 const memory = () => {
   const m = new Map<string, string>();
   return {
@@ -203,6 +204,32 @@ test('permission refresh cannot resume a paused virtual account', () => {
   post(s, '/accounts/demo-account-qq/permissions-refresh', {});
   assert.equal(s.account('demo-account-qq').status, 'paused');
   assert.equal(s.snapshot('demo-qq-0').conversation.can_send, false);
+});
+test('reconnecting a demo account restores sending while keeping old failures in history', () => {
+  const storage = memory(),
+    s = new DemoStore(storage);
+  post(s, '/announcements', {
+    title: 'recovery fixture',
+    content: 'unsent demo message',
+    conversation_ids: ['demo-qq-0'],
+    scheduled_at: new Date(Date.now() + 60000).toISOString(),
+  });
+  post(s, '/accounts/demo-account-qq/pause', {});
+  s.update((d) => {
+    d.deliveries[0].status = 'failed';
+    d.deliveries[0].last_error = '账号未在线';
+  });
+  assert.equal(s.snapshot('demo-qq-0').conversation.can_send, false);
+  post(s, '/accounts/demo-account-qq/refresh', {});
+  const restored = new DemoStore(storage).snapshot('demo-qq-0');
+  assert.equal(restored.conversation.can_send, true);
+  assert.equal(restored.conversation.send_error, null);
+  const { active, history } = partitionInboxDeliveries(restored.deliveries);
+  assert.equal(active.length, 0);
+  assert.equal(history.length, 1);
+  assert.equal(history[0]?.status, 'failed');
+  assert.equal(history[0]?.last_error, '账号未在线');
+  assert(!restored.messages.some((message) => message.content === 'unsent demo message'));
 });
 test('quota failure is explicit and never claims a successful mutation', () => {
   const s = new DemoStore({

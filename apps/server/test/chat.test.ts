@@ -348,6 +348,15 @@ test('reply validation rejects other groups, changed idempotent intent and delet
 test('reconnecting snapshots cover missed messages and sidebar activity in other groups', async () => {
   const missed = await incoming('重连后可以看到');
   const elsewhere = await incoming('另一个群也有消息', other);
+  const failed = await s.jobs.enqueue({
+    key: randomUUID(),
+    conversationId: group.id,
+    action: 'message.send',
+    params: { segments: [{ type: 'text', text: '离线时没有发出的旧消息' }] },
+  });
+  await s.db.query("UPDATE jobs SET status='failed',last_error='账号未在线，请恢复连接后再重试' WHERE id=$1", [
+    failed.id,
+  ]);
   const stream = await openStream();
   try {
     const { data } = await stream.next((event) => event === 'chat.snapshot');
@@ -358,8 +367,17 @@ test('reconnecting snapshots cover missed messages and sidebar activity in other
       (event, data) => event === 'chat.snapshot' && !data.conversation.can_send,
     );
     assert.match(offline.data.conversation.send_error, /未在线/);
+    await s.db.query("UPDATE accounts SET status='online',last_error=NULL WHERE id=$1", [account.id]);
+    const recovered = await stream.next(
+      (event, data) => event === 'chat.snapshot' && data.conversation.can_send,
+    );
+    assert.equal(recovered.data.conversation.send_error, null);
+    const history = recovered.data.deliveries.find((job: any) => job.id === failed.id);
+    assert.equal(history.status, 'failed', 'recovery must not fabricate a successful send');
+    assert.match(history.last_error, /账号未在线/);
   } finally {
     await s.db.query("UPDATE accounts SET status='online' WHERE id=$1", [account.id]);
+    await s.db.query('DELETE FROM jobs WHERE id=$1', [failed.id]);
     stream.close();
   }
 });
