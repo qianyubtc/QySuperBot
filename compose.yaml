@@ -1,0 +1,46 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      DATABASE_URL: postgresql://superbot:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/superbot
+      ADMIN_SETUP_TOKEN: ${ADMIN_SETUP_TOKEN:?Set ADMIN_SETUP_TOKEN}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set a 64-character hex ENCRYPTION_KEY}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ALLOW_PRIVATE_CONNECTORS: ${ALLOW_PRIVATE_CONNECTORS:-false}
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: superbot
+      POSTGRES_DB: superbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U superbot -d superbot']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  app-data:
+  postgres-data:

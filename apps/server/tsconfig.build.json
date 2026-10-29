@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowJs": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "../..",
+    "outDir": "../../dist/server",
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts", "../../packages/contracts/src/**/*.ts", "../../packages/binance-chat/client.js"],
+  "exclude": ["test", "../../packages/contracts/test"]
+}

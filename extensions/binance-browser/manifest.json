@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "千羽 Superbot · 币安聊天桥接",
+  "description": "将指定币安群接入 Superbot，支持图文收发；可手动授权将登录凭据交给已配对后台验证服务器直连。",
+  "version": "0.1.11",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "tabs"],
+  "optional_permissions": ["cookies"],
+  "host_permissions": ["https://www.binance.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.binance.com/*/chatroom*",
+        "https://www.binance.com/chatroom*",
+        "https://www.binance.com/*/square/chat*",
+        "https://www.binance.com/square/chat*",
+        "https://www.binance.com/*/chatWidgetEntrance*",
+        "https://www.binance.com/chatWidgetEntrance*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

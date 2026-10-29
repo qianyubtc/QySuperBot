@@ -1,0 +1,86 @@
+.member-management {
+  padding: 28px;
+}
+.member-management form {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+.member-management .form-grid {
+  align-items: start;
+}
+.member-management label:not(.check-row) {
+  display: grid;
+  gap: 8px;
+}
+.member-management small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.member-management .error-text {
+  color: #a3423b;
+}
+.member-command-settings {
+  border-block: 1px solid var(--line);
+  margin: 30px 0;
+  padding: 22px 0;
+}
+.member-command-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+.member-command-list code {
+  padding: 9px 12px;
+  background: #f0f4ee;
+  border-radius: 6px;
+}
+.member-management .table-wrap {
+  margin-top: 16px;
+}
+.member-management td {
+  vertical-align: top;
+}
+.binance-members .info-box {
+  display: block;
+  line-height: 1.7;
+}
+.binance-members .info-box p {
+  margin: 8px 0;
+}
+.binance-members fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.binance-members fieldset > .btn {
+  justify-self: start;
+}
+.binance-members table {
+  table-layout: fixed;
+  width: 100%;
+}
+.binance-members th:nth-child(1) {
+  width: 12%;
+}
+.binance-members th:nth-child(2) {
+  width: 25%;
+}
+.binance-members th:nth-child(3) {
+  width: 40%;
+}
+.binance-members th:nth-child(4) {
+  width: 23%;
+}
+.binance-members td,
+.binance-members td small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .member-management {
+    padding: 18px;
+  }
+}

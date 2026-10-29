@@ -1,0 +1,48 @@
+.moderation-results {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 5px;
+}
+.moderation-results:empty {
+  display: none;
+}
+.moderation-results > small {
+  color: #847561;
+}
+.moderation-result {
+  border-left: 2px solid #d5c59e;
+  padding-left: 8px;
+  color: #806326;
+}
+.moderation-result a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.moderation-result small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.moderation-result.succeeded {
+  color: #40633f;
+  border-color: #8bad82;
+}
+.moderation-result.failed,
+.moderation-result.unknown {
+  color: #a14d3d;
+  border-color: #d2998d;
+}
+.moderation-result.cancelled {
+  color: #7b8275;
+  border-color: #c6ccbf;
+}
+.policy-availability {
+  margin: 12px 0;
+}
+.policy-availability p {
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.8;
+}

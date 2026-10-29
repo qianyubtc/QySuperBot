@@ -1,0 +1,28 @@
+[Unit]
+Description=Qianyu Superbot
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qianyusuperbot
+Group=qianyusuperbot
+WorkingDirectory=/opt/qianyusuperbot/current
+EnvironmentFile=/etc/qianyusuperbot.env
+Environment=PATH=/opt/qianyusuperbot/runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/qianyusuperbot/runtime/bin/node dist/server/apps/server/src/main.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=qianyusuperbot
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/qianyusuperbot
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target

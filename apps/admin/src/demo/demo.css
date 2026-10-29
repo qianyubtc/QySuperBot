@@ -1,0 +1,181 @@
+body:has(.sandbox-tools) {
+  padding-bottom: 98px;
+}
+.sandbox-tools {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 120;
+  background: #f1f7e9;
+  border-top: 1px solid #bdccad;
+  box-shadow: 0 -6px 30px #1b382315;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  color: #34513c;
+  font-size: 12px;
+}
+.sandbox-tools > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.sandbox-tools strong {
+  font-size: 13px;
+}
+.sandbox-tools small {
+  color: #925618;
+}
+.sandbox-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.sandbox-tools button,
+.sandbox-tools a {
+  border: 1px solid #b7c9ac;
+  background: white;
+  color: #34513c;
+  padding: 8px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: none;
+}
+.sandbox-tools button:hover,
+.sandbox-tools a:hover {
+  background: #e2edd8;
+}
+.sandbox-reset {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 16px;
+  max-width: 420px;
+  padding: 18px;
+  background: white;
+  border: 1px solid #bdccad;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px #19312022;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sandbox-reset span {
+  width: 100%;
+}
+body:has(.sandbox-tools) .is-inbox .main-shell {
+  height: calc(100dvh - 98px);
+}
+.demo-login {
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+  background: #f6f9f2;
+  border: 1px dashed #9bb28c;
+  border-radius: 14px;
+}
+.demo-login .demo-login-symbol {
+  width: 100px;
+  height: 100px;
+  display: grid;
+  place-items: center;
+  background: #e1ecd4;
+  border-radius: 20px;
+  font-size: 42px;
+}
+.demo-login small {
+  color: #61735c;
+}
+@media (max-width: 760px) {
+  body:has(.sandbox-tools) {
+    padding-bottom: 146px;
+  }
+  .sandbox-tools {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .sandbox-tools .sandbox-actions {
+    flex-wrap: wrap;
+  }
+  .sandbox-tools button,
+  .sandbox-tools a {
+    padding: 6px 9px;
+  }
+  body:has(.sandbox-tools) .is-inbox .main-shell {
+    height: calc(100dvh - 146px);
+  }
+}
+
+body:has(.sandbox-tools) {
+  padding-bottom: var(--sandbox-height, 98px);
+}
+body:has(.sandbox-tools) .shell .sidebar {
+  bottom: var(--sandbox-height, 98px);
+  height: calc(100dvh - var(--sandbox-height, 98px));
+}
+body:has(.sandbox-tools) .shell .main-shell {
+  min-height: calc(100dvh - var(--sandbox-height, 98px));
+}
+body:has(.sandbox-tools) .is-inbox .main-shell {
+  height: calc(100dvh - var(--sandbox-height, 98px));
+}
+body:has(.sandbox-tools) .shell.is-inbox {
+  min-height: 0;
+}
+body:has(.sandbox-tools) .shell.is-inbox .main-shell {
+  display: flex;
+  flex-direction: column;
+}
+body:has(.sandbox-tools) .shell.is-inbox .topbar {
+  flex-shrink: 0;
+}
+body:has(.sandbox-tools) .shell.is-inbox main {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+body:has(.sandbox-tools) .shell.is-inbox main {
+  width: 100%;
+  min-width: 0;
+}
+@media (max-height: 520px) {
+  .sandbox-tools {
+    padding: 6px 12px;
+    gap: 6px;
+  }
+  .sandbox-tools > div:first-child > span {
+    display: none;
+  }
+  .sandbox-tools button,
+  .sandbox-tools a {
+    padding: 5px 7px;
+    font-size: 11px;
+  }
+  body:has(.sandbox-tools) .shell.is-inbox main {
+    padding: 8px 12px;
+  }
+  body:has(.sandbox-tools) .shell .inbox-page-head {
+    margin-bottom: 6px;
+  }
+  body:has(.sandbox-tools) .shell .inbox-room-head {
+    min-height: 52px;
+    padding: 6px 10px;
+  }
+  body:has(.sandbox-tools) .shell .chat-composer > textarea {
+    height: 40px;
+    min-height: 40px;
+    max-height: 40px;
+  }
+  body:has(.sandbox-tools) .shell .composer-quote {
+    padding: 6px 9px;
+  }
+  body:has(.sandbox-tools) .shell .composer-quote p {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

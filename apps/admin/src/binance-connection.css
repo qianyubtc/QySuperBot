@@ -1,0 +1,114 @@
+.account-refresh-state {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -8px 0 20px;
+  color: #74836d;
+  font-size: 12px;
+}
+.account-refresh-state.has-error {
+  color: #a64e40;
+}
+.binance-connection {
+  margin-top: 18px;
+  border: 1px solid #e7d8b6;
+  border-radius: 10px;
+  background: #fffbf2;
+  padding: 14px;
+  color: #816329;
+}
+.binance-connection.healthy {
+  border-color: #d8e4d4;
+  background: #f4f8f0;
+  color: #446744;
+}
+.binance-connection.needs-login {
+  border-color: #eccbc5;
+  background: #fff5f2;
+  color: #a24e43;
+}
+.binance-connection-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.binance-connection-summary > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.binance-connection-summary strong {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.binance-connection-summary p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.binance-connection-summary small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+.binance-connection-times {
+  border-top: 1px solid #dedfcf;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.binance-connection-times > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.binance-connection-times > div > :first-child {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.binance-connection-times > div > :last-child {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.binance-relogin-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.binance-connection-detail {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.binance-connection-detail summary {
+  cursor: pointer;
+}
+.binance-connection-detail p {
+  margin: 8px 0 0;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.binance-login-guide {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f3f7ed;
+  color: #426247;
+  font-size: 12px;
+  line-height: 1.8;
+  margin-bottom: 12px;
+}
+.binance-login-guide p {
+  margin: 4px 0 0;
+}
+.inbox-room-connection {
+  color: #a14d3d;
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .binance-connection-times > div {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+}

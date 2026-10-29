@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>币安聊天桥接</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>币安聊天桥接 <small id="version">v0.1.11</small></h1>
+    <p>在 Chrome 打开并登录币安聊天页，然后粘贴 Superbot「连接账号」生成的配对配置。</p>
+    <form id="form" novalidate>
+      <label for="config">配对配置（保存在本机）</label>
+      <textarea
+        id="config"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="粘贴后台生成的完整配对 JSON（包含 server_url、account_id、pairing_secret）"
+      ></textarea>
+      <button id="save" type="submit">保存并连接</button>
+      <button id="retry" type="button" disabled>使用已保存配置连接</button>
+      <button id="disconnect" type="button" disabled>断开并清除配置</button>
+    </form>
+    <p id="notice" role="alert" hidden></p>
+    <p id="saved-config">正在检查已保存配置…</p>
+    <p id="saved-address" hidden></p>
+    <p id="local-hint" class="note" hidden>
+      本机地址指当前 Chrome 所在的机器。若后台在另一台机器，请使用可访问的 WSS 地址。
+    </p>
+    <p id="status" role="status" aria-live="polite">正在检查连接…</p>
+    <section class="direct-panel" aria-labelledby="direct-heading">
+      <h2 id="direct-heading">一键授权服务器直连</h2>
+      <p>
+        自动读取本 Chrome 的 p20t、cr00 和可选设备标识，交给已配对后台验证。验证通过后无需保持网页或插件运行。
+      </p>
+      <p id="direct-target">先保存配对配置，再授权。</p>
+      <p class="note">
+        这是币安网页登录凭据，权限可能超出聊天范围；仅在点击授权后读取，经加密连接发送并由你的后台加密保存。令牌失效仍需重新登录后再次授权。
+      </p>
+      <label class="consent-label"
+        ><input id="direct-consent" type="checkbox" /> 我授权将上述登录凭据交给这里显示的后台</label
+      >
+      <button id="authorize-direct" type="button" disabled>读取并授权直连</button>
+      <p id="direct-status" role="status" aria-live="polite" hidden></p>
+    </section>
+    <p>
+      <a href="https://www.binance.com/zh-CN/square/chat" target="_blank" rel="noopener noreferrer"
+        >打开币安聊天页</a
+      >
+    </p>
+    <p class="note">
+      在后台勾选要同步的聊天室，支持图文收发。浏览器桥接模式需要保持聊天标签打开；直连模式以后台实际验证结果为准。
+    </p>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

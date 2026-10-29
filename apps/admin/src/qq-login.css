@@ -1,0 +1,41 @@
+.qq-login-panel {
+  display: grid;
+  gap: 14px;
+}
+.qq-login-state {
+  padding: 14px;
+  background: #f0f5ee;
+  border-radius: 8px;
+}
+.qq-login-state p {
+  margin: 8px 0 0;
+}
+.qq-login-state small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+}
+.qq-login-qr {
+  text-align: center;
+}
+.qq-login-qr svg {
+  width: min(220px, 100%);
+  height: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.qq-login-qr p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.qq-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.qq-login-panel > .muted {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+}

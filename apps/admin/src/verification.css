@@ -1,0 +1,119 @@
+.verification-intro {
+  padding: 24px 28px 14px;
+}
+.verification-intro h3 {
+  margin: 0 0 10px;
+}
+.verification-intro p {
+  margin: 6px 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.verification-intro .btn {
+  margin-top: 10px;
+}
+.verification-list > .form-error,
+.verification-list > .info-box {
+  margin: 12px 28px;
+}
+.verification-empty {
+  padding: 0 28px 24px;
+}
+.verification-table {
+  min-width: 960px;
+  table-layout: fixed;
+}
+.verification-table td {
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.verification-table th:nth-child(1) {
+  width: 16%;
+}
+.verification-table th:nth-child(2) {
+  width: 28%;
+}
+.verification-table th:nth-child(3) {
+  width: 22%;
+}
+.verification-table th:nth-child(4) {
+  width: 20%;
+}
+.verification-table th:nth-child(5) {
+  width: 14%;
+}
+.verification-table td small {
+  display: block;
+  max-width: 320px;
+  margin-top: 7px;
+  color: var(--muted);
+  line-height: 1.55;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.verification-table td small.error-text {
+  color: #a63b33;
+}
+.verification-state {
+  display: inline-block;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  background: #eef2f1;
+  color: #52615a;
+}
+.verification-state.passed {
+  background: #e4f1e7;
+  color: #2d653e;
+}
+.verification-state.removed,
+.verification-state.failed,
+.verification-state.challenge_failed,
+.verification-state.timeout_failed {
+  background: #fbe9e5;
+  color: #9f3c30;
+}
+.verification-state.failure_failed {
+  background: #fbe9e5;
+  color: #9f3c30;
+}
+.verification-state.timeout_mute_failed {
+  background: #fbe9e5;
+  color: #9f3c30;
+}
+.verification-state.failure_unknown,
+.verification-state.failure_succeeded,
+.verification-state.cooldown,
+.verification-state.timeout_mute_unknown,
+.verification-state.muted {
+  background: #fff1d7;
+  color: #8b611f;
+}
+.verification-state.failure_pending,
+.verification-state.failure_in_flight,
+.verification-state.timeout_mute_pending,
+.verification-state.timeout_mute_in_flight {
+  background: #e8eff8;
+  color: #365c87;
+}
+.verification-state.manual_review,
+.verification-state.expired,
+.verification-state.challenge_unknown,
+.verification-state.timeout_unknown {
+  background: #fff1d7;
+  color: #8b611f;
+}
+.verification-state.pending,
+.verification-state.challenge_pending,
+.verification-state.challenge_in_flight,
+.verification-state.timeout_pending,
+.verification-state.timeout_in_flight {
+  background: #e8eff8;
+  color: #365c87;
+}
+.verification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
