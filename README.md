@@ -19,7 +19,7 @@
 
 </div>
 
-![QySuperBot 工作台预览](docs/images/console-overview.png)
+![QySuperBot 工作台预览](docs/images/console-overview.jpg)
 
 <p align="center"><sub>产品界面预览，使用程序生成的虚拟账号、社群与消息数据。</sub></p>
 
@@ -271,7 +271,7 @@ npm run build:demo         # 纯前端演示构建
 <details>
 <summary>查看介绍页预览</summary>
 
-![QySuperBot 介绍页预览](docs/images/landing-preview.png)
+![QySuperBot 介绍页预览](docs/images/landing-preview.jpg)
 
 </details>
 
