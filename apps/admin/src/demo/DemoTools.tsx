@@ -40,7 +40,11 @@ export default function DemoTools() {
         {notice && <small role="status">{notice}</small>}
       </div>
       <div className="sandbox-actions">
-        <button onClick={() => run(() => demo.simulate(location.pathname.match(/^\/inbox\/([^/]+)/)?.[1]))}>
+        <button
+          onClick={() =>
+            run(() => demo.simulate(location.pathname.match(/^\/(?:inbox|groups)\/([^/]+)/)?.[1]))
+          }
+        >
           模拟新消息
         </button>
         <button onClick={() => setReset(!reset)}>重置演示</button>

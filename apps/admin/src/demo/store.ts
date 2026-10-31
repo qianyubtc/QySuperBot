@@ -3,6 +3,18 @@ type Row = Record<string, any>;
 export const DEMO_KEY = 'qysuperbot:demo:v1';
 export const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
+const normalizeKeyword = (text: string) =>
+  text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .toLowerCase()
+    .trim();
+const keywordMatch = (rule: Row, text: string) =>
+  rule.keywords.find((word: string) => {
+    const key = normalizeKeyword(word),
+      content = normalizeKeyword(text);
+    return key && (rule.match === 'exact' ? content === key : content.includes(key));
+  });
 const policy = () => ({
   mode: 'observe',
   action: 'delete',
@@ -128,6 +140,8 @@ export function seed(): Row {
     ],
     projects: [],
     routes: [],
+    keyword_rules: [],
+    keyword_hits: [],
     lotteries: [
       {
         id: 'demo-lottery',
@@ -179,6 +193,8 @@ export class DemoStore {
       )
         this.state = value;
       for (const g of this.state.groups) if (g.kind === 'supergroup') g.kind = 'group';
+      if (!Array.isArray(this.state.keyword_rules)) this.state.keyword_rules = [];
+      if (!Array.isArray(this.state.keyword_hits)) this.state.keyword_hits = [];
     } catch {
       /* A corrupt or unavailable sandbox starts from synthetic fixtures. */
     }
@@ -241,7 +257,9 @@ export class DemoStore {
             : null,
       },
       messages,
-      deliveries: this.state.deliveries.filter((d: Row) => d.conversation_id === id),
+      deliveries: this.state.deliveries.filter(
+        (d: Row) => d.conversation_id === id && d.action === 'message.send',
+      ),
       conversations: this.groups()
         .filter((g: Row) => g.sync_enabled)
         .map((g: Row) => {
@@ -509,6 +527,8 @@ export class DemoStore {
       const id = gMatch[1]!,
         action = gMatch[2],
         g = this.group(id);
+      const keywordRoute = action?.match(/^keyword-rules(?:\/([^/]+))?$/);
+      if (keywordRoute) return this.keywords(id, keywordRoute[1], method, b);
       if (!action && method === 'GET')
         return {
           ...this.groups().find((v: Row) => v.id === id),
@@ -901,15 +921,292 @@ export class DemoStore {
       return result;
     });
   }
-  simulate(id = 'demo-telegram-0') {
+  keywordOptions(id: string) {
+    const g = this.group(id),
+      account = this.account(g.executor_account_id);
+    return Object.fromEntries(
+      ['reply', 'warn', 'delete', 'mute', 'remove', 'ban'].map((action) => {
+        const supported =
+          g.platform === 'binance'
+            ? ['reply', 'warn'].includes(action)
+            : g.platform === 'custom'
+              ? action === 'reply'
+              : g.platform === 'telegram'
+                ? action !== 'remove'
+                : action !== 'ban';
+        const reason = !supported
+          ? '演示：当前平台未开放此关键词动作'
+          : !this.enabled(id)
+            ? '此群已取消同步'
+            : account.status !== 'online'
+              ? '请先恢复虚拟连接'
+              : null;
+        return [action, { available: !reason, reason }];
+      }),
+    );
+  }
+  keywordList(id: string, state = this.state) {
+    return state.keyword_rules
+      .filter((r: Row) => r.conversation_id === id)
+      .sort(
+        (a: Row, b: Row) =>
+          a.priority - b.priority || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+      );
+  }
+  keywords(id: string, ruleId: string | undefined, method: string, input: Row) {
+    const rules = this.keywordList(id),
+      group = this.group(id);
+    if (method === 'GET' && !ruleId)
+      return {
+        availability: this.keywordOptions(id),
+        rules,
+        hits: this.state.keyword_hits
+          .filter((h: Row) => h.conversation_id === id)
+          .slice(-100)
+          .reverse()
+          .map((h: Row) => {
+            const job = this.state.deliveries.find((d: Row) => d.id === h.job_id);
+            return { ...h, job_status: job?.status, last_error: job?.last_error };
+          }),
+      };
+    if (method === 'POST' && ruleId === 'preview') {
+      if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 8000)
+        throw new DemoError('请输入 1 至 8000 字的测试消息');
+      const rule = rules.find((r: Row) => r.enabled && keywordMatch(r, input.text));
+      return rule
+        ? {
+            matched: true,
+            rule_id: rule.id,
+            name: rule.name,
+            keyword: keywordMatch(rule, input.text),
+            action: rule.action,
+            mode: rule.mode,
+          }
+        : { matched: false };
+    }
+    if (method === 'POST' && ruleId === 'simulate') {
+      if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 8000)
+        throw new DemoError('请输入 1 至 8000 字的模拟消息');
+      return this.simulate(id, input.text);
+    }
+    if (method === 'DELETE' && ruleId)
+      return this.update((s) => {
+        if (!s.keyword_rules.some((r: Row) => r.id === ruleId && r.conversation_id === id))
+          throw new DemoError('规则不存在', 404);
+        s.keyword_rules = s.keyword_rules.filter((r: Row) => r.id !== ruleId || r.conversation_id !== id);
+        this.log(s, 'keyword.rule.deleted', group.name);
+        return { deleted: true };
+      });
+    if ((method === 'POST' && !ruleId) || (method === 'PUT' && ruleId))
+      return this.update((s) => {
+        const allowed = new Set([
+          'name',
+          'enabled',
+          'mode',
+          'priority',
+          'match',
+          'keywords',
+          'action',
+          'response',
+          'image_asset_id',
+          'duration_seconds',
+          'cooldown_seconds',
+          'exempt_admins',
+          'expected_revision',
+        ]);
+        if (Object.keys(input).some((key) => !allowed.has(key)))
+          throw new DemoError('关键词规则包含无效字段');
+        const rule = ruleId
+          ? s.keyword_rules.find((r: Row) => r.id === ruleId && r.conversation_id === id)
+          : undefined;
+        if (ruleId && !rule) throw new DemoError('规则不存在', 404);
+        if (rule && rule.revision !== input.expected_revision)
+          throw new DemoError('规则已被其他操作修改，请重新打开后编辑', 409);
+        if (!rule && rules.length >= 50) throw new DemoError('每个群最多 50 条规则');
+        const value: Row = {
+          enabled: true,
+          mode: 'observe',
+          priority: 50,
+          match: 'contains',
+          response: '',
+          image_asset_id: null,
+          duration_seconds: 600,
+          cooldown_seconds: 60,
+          exempt_admins: true,
+          ...input,
+        };
+        if (
+          typeof value.name !== 'string' ||
+          !value.name.trim() ||
+          value.name.trim().length > 80 ||
+          !['observe', 'enforce'].includes(value.mode) ||
+          !['contains', 'exact'].includes(value.match) ||
+          !['reply', 'warn', 'delete', 'mute', 'remove', 'ban'].includes(value.action) ||
+          typeof value.enabled !== 'boolean' ||
+          typeof value.exempt_admins !== 'boolean'
+        )
+          throw new DemoError('规则名称、动作或模式无效');
+        if (
+          !Array.isArray(value.keywords) ||
+          !value.keywords.length ||
+          value.keywords.length > 100 ||
+          value.keywords.some(
+            (w: unknown) => typeof w !== 'string' || !normalizeKeyword(w) || w.trim().length > 128,
+          )
+        )
+          throw new DemoError('请填写 1 至 100 个有效关键词');
+        for (const [key, min, max] of [
+          ['priority', 1, 100],
+          ['duration_seconds', 60, 2592000],
+          ['cooldown_seconds', 5, 86400],
+        ] as const)
+          if (!Number.isInteger(value[key]) || value[key] < min || value[key] > max)
+            throw new DemoError('顺序、禁言时长或冷却时间无效');
+        if (value.action !== 'reply') value.exempt_admins = true;
+        if (
+          typeof value.response !== 'string' ||
+          value.response.length > (value.image_asset_id ? 1000 : group.platform === 'binance' ? 2000 : 4000)
+        )
+          throw new DemoError('回复内容过长或无效');
+        if (
+          ['reply', 'warn'].includes(value.action)
+            ? !value.response.trim() && !value.image_asset_id
+            : value.response || value.image_asset_id
+        )
+          throw new DemoError('请填写有效回复，处罚动作不附带回复');
+        if (value.image_asset_id && !s.images[value.image_asset_id]) throw new DemoError('请先添加演示图片');
+        if (value.enabled && value.mode === 'enforce') {
+          const option = this.keywordOptions(id)[value.action]!;
+          if (!option.available) throw new DemoError(option.reason!, 409);
+          if (group.platform === 'custom' && (value.exempt_admins || value.image_asset_id))
+            throw new DemoError('自定义源仅提供关闭管理员豁免后的文字回复');
+        }
+        const row: Row = {
+          ...value,
+          id: ruleId ?? uid(),
+          conversation_id: id,
+          revision: uid(),
+          created_at: rule?.created_at ?? now(),
+          name: value.name.trim(),
+          keywords: [...new Set(value.keywords.map((v: string) => v.trim()))],
+        };
+        delete row.expected_revision;
+        if (rule) s.keyword_rules[s.keyword_rules.indexOf(rule)] = row;
+        else s.keyword_rules.push(row);
+        this.log(s, 'keyword.rule.saved', group.name);
+        return row;
+      });
+    throw new DemoError('此关键词演示操作不受支持', 404);
+  }
+  applyKeyword(s: Row, g: Row, message: Row) {
+    if (!['allowed', 'observed'].includes(message.verdict)) return;
+    const rule = this.keywordList(g.id, s).find((r: Row) => r.enabled && keywordMatch(r, message.content));
+    if (!rule) return;
+    const recent = s.keyword_hits.some(
+      (h: Row) =>
+        h.conversation_id === g.id &&
+        h.status === 'pending' &&
+        ((h.rule_id === rule.id &&
+          h.user_id === message.sender_id &&
+          Date.now() - Date.parse(h.created_at) < rule.cooldown_seconds * 1000) ||
+          Date.now() - Date.parse(h.created_at) < 3000),
+    );
+    const hit = {
+      id: uid(),
+      rule_id: rule.id,
+      conversation_id: g.id,
+      message_id: message.id,
+      user_id: message.sender_id,
+      sender_name: message.sender_name,
+      rule_name: rule.name,
+      action: rule.action,
+      keyword: keywordMatch(rule, message.content),
+      status: rule.mode === 'observe' ? 'observed' : recent ? 'cooldown' : 'pending',
+      detail:
+        rule.mode === 'observe'
+          ? '演示：仅记录命中，未执行动作'
+          : recent
+            ? '演示：处于成员冷却或群内防刷屏间隔'
+            : '',
+      created_at: now(),
+      job_id: null as string | null,
+    };
+    s.keyword_hits.push(hit);
+    if (rule.mode === 'enforce' && rule.action !== 'reply') {
+      message.verdict = 'blocked';
+      message.reason = `关键词规则：${rule.name}`;
+    }
+    if (hit.status !== 'pending') return;
+    let job: Row;
+    if (['reply', 'warn'].includes(rule.action))
+      job = this.send(s, g, {
+        text: rule.response,
+        image_asset_id: rule.image_asset_id,
+        reply_to: message.external_id,
+      });
+    else {
+      job = {
+        id: uid(),
+        conversation_id: g.id,
+        conversation_name: g.name,
+        name: g.name,
+        platform: g.platform,
+        is_demo: true,
+        action: rule.action === 'delete' ? 'message.delete' : `member.${rule.action}`,
+        params:
+          rule.action === 'delete'
+            ? { message_id: message.external_id }
+            : {
+                user_id: message.sender_id,
+                ...(rule.action === 'mute' ? { duration_seconds: rule.duration_seconds } : {}),
+              },
+        status: 'succeeded',
+        created_at: now(),
+        updated_at: now(),
+        due_at: now(),
+        retryable: false,
+        attempts: [],
+        receipt: { status: 'succeeded', result: {} },
+      };
+      s.deliveries.unshift(job);
+      if (rule.action === 'delete') message.deleted = true;
+    }
+    job.review_ref = { purpose: 'keyword', rule_name: rule.name, rule_id: rule.id };
+    hit.job_id = job.id;
+    message.moderation_jobs.push({
+      id: job.id,
+      action: job.action,
+      status: job.status,
+      purpose: 'keyword',
+      rule_name: rule.name,
+      current_version: true,
+    });
+    if (['warn', 'mute', 'remove', 'ban'].includes(rule.action))
+      s.actions.unshift({
+        id: hit.id,
+        conversation_id: g.id,
+        user_id: message.sender_id,
+        action: rule.action,
+        reason: `关键词规则：${rule.name}`,
+        actor: '关键词规则（演示）',
+        source: 'keyword',
+        job_id: job.id,
+        job_status: 'succeeded',
+        warning_active: rule.action === 'warn',
+        created_at: now(),
+      });
+    this.log(s, 'keyword.matched', g.name);
+  }
+  simulate(id = 'demo-telegram-0', inputText?: string) {
     const g = this.group(id);
     if (!this.enabled(id)) throw new DemoError('此演示群已取消同步');
+    if (this.account(g.executor_account_id).status !== 'online') throw new DemoError('请先恢复虚拟连接');
     return this.update((s) => {
-      const text = [
-        '这条新消息由浏览器本地生成。',
-        '今晚的分享会我来参加！',
-        '示例广告：这条消息用于体验规则命中。',
-      ][Math.floor(Math.random() * 3)]!;
+      const text =
+        inputText ??
+        ['这条新消息由浏览器本地生成。', '今晚的分享会我来参加！', '示例广告：这条消息用于体验规则命中。'][
+          Math.floor(Math.random() * 3)
+        ]!;
       const blocked = g.policy.keywords.some((word: string) => text.includes(word));
       const message = {
         id: uid(),
@@ -927,6 +1224,7 @@ export class DemoStore {
         moderation_jobs: [],
       };
       s.messages.push(message);
+      this.applyKeyword(s, g, message);
       this.log(s, 'message.queued', '模拟新消息');
       return message;
     });

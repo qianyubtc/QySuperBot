@@ -5,6 +5,8 @@ const actions: Record<string, string> = {
   'message.delete': '删除消息',
   'member.remove': '移出成员',
   'member.ban': '封禁成员',
+  'member.mute': '禁言成员',
+  'message.send': '发送回复或警告',
 };
 const states: Record<string, string> = {
   pending: '等待处理',
@@ -34,6 +36,7 @@ export default function ModerationResult({
       {jobs.map((job) => (
         <div key={job.id} className={`moderation-result ${job.status}`}>
           <Link to={`/announcements?delivery=${encodeURIComponent(job.id)}`}>
+            {job.purpose === 'keyword' && `关键词「${job.rule_name ?? '触发规则'}」 · `}
             {actions[job.action] ?? job.action}：
             {demo && job.status === 'succeeded' ? '演示处理成功' : (states[job.status] ?? job.status)}
           </Link>

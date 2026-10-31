@@ -53,10 +53,11 @@ export function policyAvailability(group: Row, account: Row, snapshot?: Row) {
 export function moderationJobsSql(alias = 'm') {
   return `COALESCE((SELECT jsonb_agg(jsonb_build_object(
     'id',mj.id,'action',mj.action,'status',mj.status,'last_error',mj.last_error,
+    'purpose',mj.review_ref->>'purpose','rule_name',mj.review_ref->>'rule_name',
     'content_version',mj.review_ref->>'content_version',
     'current_version',mj.review_ref->>'content_version'=${alias}.content_version::text)
     ORDER BY mj.created_at,mj.id)
     FROM jobs mj WHERE mj.conversation_id=${alias}.conversation_id
-      AND mj.review_ref->>'purpose'='moderation'
+      AND mj.review_ref->>'purpose' IN ('moderation','keyword')
       AND mj.review_ref->>'message_record_id'=${alias}.id),'[]'::jsonb)`;
 }

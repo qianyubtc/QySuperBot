@@ -105,6 +105,23 @@ CREATE TABLE IF NOT EXISTS member_actions (
   job_id text REFERENCES jobs(id),warning_active boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS member_actions_target ON member_actions(conversation_id,user_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS keyword_rules (
+  id text PRIMARY KEY,conversation_id text NOT NULL REFERENCES conversations(id),name text NOT NULL,
+  enabled boolean NOT NULL,mode text NOT NULL,priority integer NOT NULL,match text NOT NULL,keywords jsonb NOT NULL,
+  action text NOT NULL,response text NOT NULL,image_asset_id text REFERENCES uploaded_images(id),
+  duration_seconds integer NOT NULL,cooldown_seconds integer NOT NULL,exempt_admins boolean NOT NULL,
+  revision text NOT NULL,created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS keyword_rules_group ON keyword_rules(conversation_id,priority,created_at,id);
+CREATE TABLE IF NOT EXISTS keyword_hits (
+  id text PRIMARY KEY,rule_id text NOT NULL,conversation_id text NOT NULL REFERENCES conversations(id),
+  message_id text NOT NULL UNIQUE REFERENCES messages(id),user_id text NOT NULL,rule_name text NOT NULL,
+  action text NOT NULL,keyword text NOT NULL,status text NOT NULL,detail text NOT NULL,
+  job_id text REFERENCES jobs(id),created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS keyword_hits_cooldown ON keyword_hits(conversation_id,rule_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS keyword_hits_group_time ON keyword_hits(conversation_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS jobs_keyword_message ON jobs(conversation_id,(review_ref->>'message_record_id')) WHERE review_ref->>'purpose' IN ('moderation','keyword');
 CREATE TABLE IF NOT EXISTS qq_join_requests (
   id text PRIMARY KEY,account_id text NOT NULL REFERENCES accounts(id),conversation_id text NOT NULL REFERENCES conversations(id),
   user_id text NOT NULL,flag_box text NOT NULL,fingerprint text NOT NULL,comment text NOT NULL,

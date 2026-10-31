@@ -16,6 +16,7 @@ import { evaluateText } from './policy.ts';
 import { groupEnabled } from './scope.ts';
 import { normalizePresentation, type Presentation } from './presentation.ts';
 import { QQVerification, qqVerificationRequired } from './qq-verification.ts';
+import { KeywordRules, keywordText } from './keyword-rules.ts';
 
 export class MessagesService {
   ctx: Context;
@@ -448,6 +449,24 @@ export class MessagesService {
       await audit(tx, '规则引擎', 'moderation.matched', group.id, { message_id: id, reason, verdict });
     }
     if (!['allowed', 'observed'].includes(verdict) || event.type !== 'message.created') return;
+    // Historical import, edits, bot echoes, and relayed messages never replay triggers.
+    if (
+      !event.trace &&
+      epoch(event.occurred_at) >= Date.now() - 120000 &&
+      epoch(event.occurred_at) <= Date.now() + 10000
+    ) {
+      const trigger = await new KeywordRules(this.ctx, this.jobs).match(tx, group, account, {
+        id,
+        external_id: data.message_id,
+        sender_id: data.sender_id,
+        content: keywordText(data.segments),
+        content_version: version,
+        fingerprint: contentHash,
+        direction: data.direction,
+        thread_id: data.thread_id,
+      });
+      if (trigger?.blocksSync) return;
+    }
     const routes = await tx.query(
       'SELECT r.*,c.policy,c.policy_version FROM routes r JOIN conversations c ON c.id=r.target_id WHERE r.source_id=$1 AND r.enabled=true',
       [group.id],

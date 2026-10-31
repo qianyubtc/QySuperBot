@@ -18,6 +18,7 @@ import { BinanceMembers } from './binance-members.ts';
 import { QQLogin } from './qq-login.ts';
 import { QQRequests } from './qq-requests.ts';
 import { QQVerification } from './qq-verification.ts';
+import { KeywordRules } from './keyword-rules.ts';
 
 export async function createServices(
   config: Config,
@@ -49,6 +50,7 @@ export async function createServices(
       },
     );
     const jobs = new JobsService(ctx);
+    const keywords = new KeywordRules(ctx, jobs);
     const qqVerification = new QQVerification(ctx, jobs, (id) => accounts.refresh(id, '自动验证权限刷新'));
     const messages = new MessagesService(ctx, jobs, qqVerification);
     const features = new FeaturesService(ctx, jobs, auth, qqVerification);
@@ -65,6 +67,7 @@ export async function createServices(
       auth,
       accounts,
       jobs,
+      keywords,
       messages,
       features,
       chat,

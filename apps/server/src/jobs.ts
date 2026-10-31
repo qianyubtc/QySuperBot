@@ -22,6 +22,7 @@ import {
   qqVerificationRequired,
 } from './qq-verification.ts';
 import type { QQMembershipProof } from './qq-verification.ts';
+import { checkKeywordJob } from './keyword-rules.ts';
 
 export class JobsService {
   ctx: Context;
@@ -297,6 +298,7 @@ export class JobsService {
       return { code: 'CAPABILITY_UNAVAILABLE', message: '连接器不支持此操作，或当前账号缺少权限' };
     if (job.review_ref) {
       const ref = job.review_ref;
+      if (ref.purpose === 'keyword') return checkKeywordJob(this.ctx, job, group, current);
       if (ref.purpose === 'binance-member-management') {
         if (
           account.kind !== 'binance' ||
@@ -573,6 +575,20 @@ export class JobsService {
         );
       if (firstSuccess && next.status === 'succeeded') {
         const account = (await tx.query('SELECT * FROM accounts WHERE id=$1', [accountId]))[0]!;
+        if (job.review_ref?.purpose === 'keyword') {
+          const hit = (
+            await tx.query('SELECT * FROM keyword_hits WHERE id=$1 AND job_id=$2', [
+              job.review_ref.hit_id,
+              job.id,
+            ])
+          )[0];
+          if (hit?.action === 'warn')
+            await tx.query(
+              `INSERT INTO member_actions(id,conversation_id,user_id,action,reason,actor,source,job_id,warning_active)
+              VALUES($1,$2,$3,'warn',$4,'关键词规则','keyword',$5,true) ON CONFLICT(id) DO NOTHING`,
+              [hit.id, hit.conversation_id, hit.user_id, `关键词规则：${hit.rule_name}`, job.id],
+            );
+        }
         if (job.action === 'message.send') {
           const content = job.params.segments
             .map((part: any) => (part.type === 'text' ? part.text : `[${part.type}]`))

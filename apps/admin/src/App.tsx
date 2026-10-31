@@ -60,6 +60,7 @@ import BinanceMemberManagement from './BinanceMemberManagement';
 import QQLogin from './QQLogin';
 import QQRequests from './QQRequests';
 import VerificationList from './VerificationList';
+import KeywordRules from './KeywordRules';
 import { CopyButton, QuickNavigate } from './ConsoleTools';
 
 type Data = Record<string, any>;
@@ -1650,6 +1651,7 @@ function GroupDetail() {
   const tabs = [
     ['messages', '消息记录'],
     ['policy', '管理规则'],
+    ['keywords', '关键词触发'],
     ['permissions', '平台能力'],
     ...(['telegram', 'binance'].includes(g?.platform) && g.kind === 'group'
       ? [['members', '成员管理']]
@@ -1707,7 +1709,7 @@ function GroupDetail() {
               </span>
               <span>
                 <ShieldCheck size={17} />
-                规则 <strong>{g.policy.mode === 'enforce' ? '自动处理' : '观察模式'}</strong>
+                广告规则 <strong>{g.policy.mode === 'enforce' ? '自动处理' : '观察模式'}</strong>
               </span>
               <span>
                 <Clock3 size={17} />
@@ -1839,6 +1841,7 @@ function GroupDetail() {
                   <PolicyForm key={g.id} group={g} />
                 </div>
               )}
+              {tab === 'keywords' && <KeywordRules key={g.id} id={g.id} platform={g.platform} />}
               {tab === 'members' && g.platform === 'telegram' && g.kind === 'group' && (
                 <MemberManagement key={g.id} id={g.id} member={searchParams.get('member')} />
               )}
@@ -4595,6 +4598,9 @@ const actionLabel = (value: string) =>
       'lottery.created': '创建了社群抽奖',
       'lottery.drawn': '完成了抽奖开奖',
       'moderation.matched': '规则命中并创建了处理任务',
+      'keyword.rule.saved': '保存了关键词触发规则',
+      'keyword.rule.deleted': '删除了关键词触发规则',
+      'keyword.matched': '关键词命中并提交了执行任务',
       'event.quarantined': '隔离了异常平台事件',
     }) as Data
   )[value] ?? value;

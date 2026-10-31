@@ -267,6 +267,9 @@ export default function MemberManagement({ id, member }: { id: string; member?: 
                             {statuses[a.job_status] ?? a.job_status}
                           </Link>
                           {a.last_error && <small className="error-text">{a.last_error}</small>}
+                          {a.action === 'warn' && (
+                            <small>{a.warning_active ? '计入有效警告' : '警告已清除，发送记录保留'}</small>
+                          )}
                         </>
                       ) : (
                         <span>

@@ -204,6 +204,15 @@ class ApiController {
       return s.features.createLottery(body, principal.name);
     }
     s.auth.requireAdmin(principal);
+    const keywordRules = path.match(/^\/conversations\/([^/]+)\/keyword-rules(?:\/([^/]+))?$/);
+    if (keywordRules) {
+      const [, id, ruleId] = keywordRules;
+      if (method === 'GET' && !ruleId) return s.keywords.overview(id!);
+      if (method === 'POST' && ruleId === 'preview') return s.keywords.preview(id!, body);
+      if (method === 'POST' && !ruleId) return s.keywords.save(id!, undefined, body, principal.name);
+      if (method === 'PUT' && ruleId) return s.keywords.save(id!, ruleId, body, principal.name);
+      if (method === 'DELETE' && ruleId) return s.keywords.remove(id!, ruleId, principal.name);
+    }
     if (method === 'GET' && path === '/qq-local') return s.qqLogin.local();
     const qqLogin = path.match(
       /^\/(?:accounts\/([^/]+)\/qq-login|qq-local\/login)(?:\/(refresh|quick|connect))?$/,

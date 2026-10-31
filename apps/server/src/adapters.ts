@@ -425,8 +425,27 @@ export class Adapters {
       proof?: QQMembershipProof,
     ) => Promise<{ code: string; message: string; retryable?: boolean } | null>,
   ): Promise<ExecutionReceipt> {
-    if (account.kind === 'binance' && this.binance)
+    if (account.kind === 'binance' && this.binance) {
+      if (reviewRef?.purpose === 'keyword') {
+        const blocked = await beforeMutation?.();
+        if (!beforeMutation || blocked)
+          return {
+            schema_version: '1',
+            command_id: command.command_id,
+            attempt_id: command.attempt_id,
+            attempt_number: command.attempt_number,
+            revision: 1,
+            observed_at: new Date().toISOString(),
+            status: 'failed',
+            error: {
+              code: blocked?.code ?? 'KEYWORD_SCOPE',
+              message: blocked?.message ?? '无法核对关键词任务',
+              retryable: false,
+            },
+          };
+      }
       return this.binance.execute(account, command, reviewRef, beforeMutation);
+    }
     const base = {
       schema_version: '1' as const,
       command_id: command.command_id,
@@ -597,9 +616,15 @@ export class Adapters {
         default:
           return fail('CAPABILITY_UNSUPPORTED', '此平台动作尚未接入执行器');
       }
-      if (command.action === 'member.mute' || command.action === 'member.ban') {
+      if (
+        command.action === 'member.mute' ||
+        command.action === 'member.ban' ||
+        reviewRef?.purpose === 'keyword'
+      ) {
         const blocked = await beforeMutation?.();
         if (blocked) return fail(blocked.code, blocked.message, blocked.retryable ?? false);
+        if (reviewRef?.purpose === 'keyword' && !beforeMutation)
+          return fail('KEYWORD_SCOPE', '无法核对关键词任务');
         if (
           reviewRef?.purpose === 'member-management' &&
           (!Number.isFinite(new Date(reviewRef.expires_at).getTime()) ||
@@ -644,6 +669,7 @@ export class Adapters {
     }
     if (account.kind === 'qq') {
       const qqVerification = qqVerificationPurposes.has(reviewRef?.purpose);
+      const keyword = reviewRef?.purpose === 'keyword';
       let membershipProof: QQMembershipProof | undefined;
       let verificationProtected = false;
       let action: string;
@@ -689,12 +715,20 @@ export class Adapters {
         params = { group_id: target, user_id: command.params.user_id, reject_add_request: false };
       } else if (command.action === 'member.mute') {
         if (
-          !['qq-verification-failure', 'qq-verification-timeout-mute'].includes(reviewRef?.purpose) ||
-          command.params.duration_seconds !== 600
+          keyword
+            ? !beforeMutation ||
+              command.params.duration_seconds < 60 ||
+              command.params.duration_seconds > 30 * 86400
+            : !['qq-verification-failure', 'qq-verification-timeout-mute'].includes(reviewRef?.purpose) ||
+              command.params.duration_seconds !== 600
         )
           return fail('QQ_VERIFICATION_SCOPE', 'QQ 禁言仅允许经过核对的验证失败任务');
         action = 'set_group_ban';
-        params = { group_id: target, user_id: command.params.user_id, duration: 600 };
+        params = {
+          group_id: target,
+          user_id: command.params.user_id,
+          duration: command.params.duration_seconds,
+        };
       } else if (command.action === 'membership.approve') {
         if (reviewRef?.purpose !== 'qq-join-review' || reviewRef.request_id !== command.params.request_id)
           return fail('QQ_REQUEST_SCOPE', '无法核对入群申请与目标群，未执行审核');
@@ -738,7 +772,7 @@ export class Adapters {
           muted_until: typeof member.shut_up_timestamp === 'number' ? member.shut_up_timestamp : undefined,
         };
       }
-      if (command.action !== 'message.send' || qqVerification) {
+      if (command.action !== 'message.send' || qqVerification || keyword) {
         // Role queries can take time. The same bridge URL can switch accounts
         // while they run; recheck the actor immediately before the mutation.
         let confirmed;
@@ -750,6 +784,11 @@ export class Adapters {
         if (!qqSucceeded(confirmed)) return fail('QQ_UNAVAILABLE', 'QQ 登录状态尚未确认，未执行操作', true);
         if (String(confirmed.data.data?.user_id) !== account.external_id)
           return fail('QQ_IDENTITY_CHANGED', '权限查询期间 QQ 登录账号已变化，未执行操作');
+      }
+      if (keyword) {
+        if (!beforeMutation) return fail('KEYWORD_SCOPE', '无法核对关键词任务');
+        const blocked = await beforeMutation();
+        if (blocked) return fail(blocked.code, blocked.message, blocked.retryable ?? false);
       }
       if (command.action === 'membership.approve' || qqVerification) {
         if (qqVerification && !beforeMutation)

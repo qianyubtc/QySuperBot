@@ -17,6 +17,136 @@ const memory = () => {
 };
 const post = (store: DemoStore, path: string, body: any, key?: string) =>
   store.request(path, { method: 'POST', body, key });
+const ruleBody = (extra: any = {}) => ({
+  name: '演示关键词',
+  keywords: ['帮助'],
+  action: 'reply',
+  response: '演示帮助内容',
+  mode: 'enforce',
+  ...extra,
+});
+const keywordPath = (id = 'demo-telegram-0') => `/conversations/${id}/keyword-rules`;
+
+test('keyword preview and observation are local, read-only and separate from execution receipts', () => {
+  const s = new DemoStore(),
+    path = keywordPath();
+  const rule = post(s, path, ruleBody({ mode: 'observe', priority: 1, match: 'exact' }));
+  post(s, path, ruleBody({ priority: 2 }));
+  assert.equal(post(s, path + '/preview', { text: '帮助' }).rule_id, rule.id);
+  assert.equal(s.state.keyword_hits.length, 0);
+  assert.equal(s.state.deliveries.length, 0);
+  post(s, path + '/simulate', { text: ' 帮助 ' });
+  const result = s.request(path);
+  assert.equal(result.hits[0].status, 'observed');
+  assert.equal(result.hits[0].job_id, null);
+  assert.equal(s.state.deliveries.length, 0);
+});
+test('keyword image replies, quote context and cooldown work on all three synthetic platforms after reload', () => {
+  for (const platform of ['telegram', 'qq', 'binance']) {
+    const storage = memory(),
+      s = new DemoStore(storage),
+      id = `demo-${platform}-0`,
+      path = keywordPath(id);
+    s.update((d) => {
+      d.images.picture = { url: 'data:image/png;base64,synthetic' };
+    });
+    post(s, path, ruleBody({ image_asset_id: 'picture' }));
+    post(s, path + '/simulate', { text: '帮助' });
+    assert.equal(s.state.deliveries.length, 1);
+    const outgoing = s.snapshot(id).messages.at(-1)!;
+    assert.equal(outgoing.reply_content, '帮助');
+    assert.equal(outgoing.segments.at(-1).asset_id, 'picture');
+    const restored = new DemoStore(storage);
+    post(restored, path + '/simulate', { text: '帮助' });
+    assert.equal(restored.state.deliveries.length, 1);
+    assert.equal(restored.request(path).hits[0].status, 'cooldown');
+  }
+});
+test('keyword platform restrictions, revision conflicts, scope and offline gates remain effective in demo', () => {
+  const s = new DemoStore(),
+    path = keywordPath('demo-qq-0');
+  const rule = post(s, path, ruleBody({ action: 'mute', response: '', duration_seconds: 900 }));
+  post(s, path + '/simulate', { text: '帮助' });
+  assert.equal(s.state.deliveries[0].action, 'member.mute');
+  assert.equal(s.state.deliveries[0].params.duration_seconds, 900);
+  assert.equal(s.snapshot('demo-qq-0').deliveries.length, 0);
+  assert.equal(s.request(path).hits[0].job_status, 'succeeded');
+  const disabled = s.request(path + '/' + rule.id, {
+    method: 'PUT',
+    body: ruleBody({ action: 'mute', response: '', enabled: false, expected_revision: rule.revision }),
+  });
+  assert.equal(disabled.enabled, false);
+  assert.throws(
+    () =>
+      s.request(path + '/' + rule.id, {
+        method: 'PUT',
+        body: ruleBody({ expected_revision: rule.revision }),
+      }),
+    /修改/,
+  );
+  assert.throws(
+    () => post(s, keywordPath('demo-binance-0'), ruleBody({ action: 'mute', response: '' })),
+    /未开放/,
+  );
+  s.request('/accounts/demo-account-qq/groups', {
+    method: 'PUT',
+    body: { group_ids: [], revision: 'initial' },
+  });
+  assert.equal(s.request(path).availability.mute.available, false);
+  assert.throws(() => post(s, path + '/simulate', { text: '帮助' }), /取消同步/);
+  s.update((d) => {
+    d.accounts.find((a: any) => a.kind === 'telegram').status = 'error';
+  });
+  assert.throws(() => post(s, keywordPath() + '/simulate', { text: '帮助' }), /恢复虚拟连接/);
+});
+test('warning count follows a simulated receipt, legacy moderation takes precedence and deleted rules keep their history', () => {
+  const s = new DemoStore(),
+    path = keywordPath();
+  const rule = post(s, path, ruleBody({ action: 'warn' }));
+  post(s, path + '/simulate', { text: '帮助' });
+  assert.equal(
+    s.request('/conversations/demo-telegram-0/member-management?user_id=100004').selected_warning_count,
+    1,
+  );
+  s.request(path + '/' + rule.id, { method: 'DELETE' });
+  assert.equal(s.request(path).rules.length, 0);
+  assert.equal(s.request(path).hits.length, 1);
+  post(s, path, ruleBody({ keywords: ['示例广告'] }));
+  s.request('/conversations/demo-telegram-0/policy', {
+    method: 'PUT',
+    body: { mode: 'enforce', keywords: ['示例广告'] },
+  });
+  post(s, path + '/simulate', { text: '示例广告' });
+  assert.equal(s.request(path).hits.length, 1);
+});
+test('existing browser demo state upgrades without losing prior messages or selections', () => {
+  const storage = memory(),
+    s = new DemoStore(storage);
+  post(s, '/messages', { conversation_ids: ['demo-telegram-0'], text: '保留的演示消息' });
+  const legacy = JSON.parse(storage.getItem(DEMO_KEY)!);
+  delete legacy.keyword_rules;
+  delete legacy.keyword_hits;
+  storage.setItem(DEMO_KEY, JSON.stringify(legacy));
+  const upgraded = new DemoStore(storage);
+  assert.equal(upgraded.snapshot('demo-telegram-0').messages.at(-1)!.content, '保留的演示消息');
+  assert.equal(upgraded.request(keywordPath()).rules.length, 0);
+  post(upgraded, keywordPath(), ruleBody());
+  assert.equal(new DemoStore(storage).request(keywordPath()).rules.length, 1);
+});
+test('keyword demo rules never persist unknown credential or endpoint fields', () => {
+  const s = new DemoStore();
+  assert.throws(
+    () =>
+      post(
+        s,
+        keywordPath(),
+        ruleBody({ token: 'NOT_A_REAL_CREDENTIAL', endpoint: 'https://example.invalid' }),
+      ),
+    /无效字段/,
+  );
+  assert.equal(s.state.keyword_rules.length, 0);
+  assert.equal(s.state.keyword_hits.length, 0);
+});
 test('history pages contain every synthetic message exactly once', () => {
   const s = new DemoStore(),
     snapshot = s.snapshot('demo-qq-0'),
