@@ -148,6 +148,7 @@ body:has(.sandbox-tools) .shell.is-inbox main {
   }
   body:has(.sandbox-tools) .shell.is-inbox .main-shell {
     height: calc(100dvh - var(--sandbox-height, 146px) - 62px - env(safe-area-inset-bottom));
+    min-height: 0;
   }
   body:has(.sandbox-tools) .shell .toast {
     bottom: calc(var(--sandbox-height, 146px) + 76px + env(safe-area-inset-bottom));
