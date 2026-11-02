@@ -142,6 +142,17 @@ body:has(.sandbox-tools) .shell.is-inbox main {
   width: 100%;
   min-width: 0;
 }
+@media (max-width: 760px) {
+  body:has(.sandbox-tools) .shell .mobile-dock {
+    bottom: var(--sandbox-height, 146px);
+  }
+  body:has(.sandbox-tools) .shell.is-inbox .main-shell {
+    height: calc(100dvh - var(--sandbox-height, 146px) - 62px - env(safe-area-inset-bottom));
+  }
+  body:has(.sandbox-tools) .shell .toast {
+    bottom: calc(var(--sandbox-height, 146px) + 76px + env(safe-area-inset-bottom));
+  }
+}
 @media (max-height: 520px) {
   .sandbox-tools {
     padding: 6px 12px;

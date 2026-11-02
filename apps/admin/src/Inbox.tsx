@@ -10,6 +10,7 @@ import {
   ChevronUp,
   CircleAlert,
   Clock3,
+  Info,
   LoaderCircle,
   MessageSquare,
   Radio,
@@ -28,6 +29,7 @@ import { api, RequestError, mediaUrl, openChatStream } from './api';
 import ModerationResult from './ModerationResult';
 import InboxDeliveryHistory from './InboxDeliveryHistory';
 import { ImageViewer } from './ConsoleTools';
+import { filterChatScope } from './workbench';
 import {
   readInboxDrafts,
   saveInboxDrafts,
@@ -364,6 +366,13 @@ export default function Inbox({
   const snapshot = state?.conversation.id === id ? state : undefined;
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [scope, setScope] = useState('all');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [compactDetails, setCompactDetails] = useState(
+    () => window.matchMedia('(max-width: 1100px)').matches,
+  );
+  const detailButton = useRef<HTMLButtonElement>(null);
+  const details = useRef<HTMLElement>(null);
   const [showGroups, setShowGroups] = useState(false);
   const draftKey = `superbot:inbox-drafts:${draftScope}`;
   const sendKey = `superbot:inbox-sends:${draftScope}`;
@@ -445,13 +454,16 @@ export default function Inbox({
   useLayoutEffect(() => {
     if (snapshot?.conversations) previousConversations.current = snapshot.conversations;
   }, [snapshot?.conversations]);
-  const room = snapshot?.conversation ?? initialGroups.find((group) => group.id === id);
+  const initialRoom = initialGroups.find((group) => group.id === id);
+  const room = snapshot ? { ...initialRoom, ...snapshot.conversation } : initialRoom;
   const directoryById = new Map(initialGroups.map((group) => [group.id, group]));
-  const groups = visibleInboxGroups(
+  const groups: (Data & { id: string })[] = visibleInboxGroups(
     snapshot?.conversations ?? previousConversations.current ?? initialGroups,
-  ).map((group) => ({ ...directoryById.get(group.id), ...group }));
+  ).map((group) => ({ ...directoryById.get(group.id), ...group, id: String(group.id) }));
   const messages = snapshot?.messages ?? [];
-  const { active: deliveries, history: pastDeliveries } = partitionInboxDeliveries(snapshot?.deliveries ?? []);
+  const { active: deliveries, history: pastDeliveries } = partitionInboxDeliveries(
+    snapshot?.deliveries ?? [],
+  );
   const lastDeliveryStates = useRef<{ groupId: string; states: Map<string, string> } | undefined>(undefined);
   useEffect(() => {
     if (!snapshot) return;
@@ -495,6 +507,34 @@ export default function Inbox({
     if (findOpen) findInput.current?.focus();
   }, [findOpen]);
   useEffect(() => {
+    if (!detailsOpen) return;
+    details.current?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (!compactDetails || event.key !== 'Tab') return;
+      const entries = Array.from(details.current?.querySelectorAll<HTMLElement>('a[href], button') ?? []);
+      const first = entries[0],
+        last = entries.at(-1);
+      if (
+        event.shiftKey &&
+        (document.activeElement === first || document.activeElement === details.current)
+      ) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', trap);
+    return () => document.removeEventListener('keydown', trap);
+  }, [detailsOpen, compactDetails]);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1100px)');
+    const update = () => setCompactDetails(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
     if (findOpen && findQuery.trim()) jumpMatch(0);
   }, [findQuery]);
   useEffect(() => {
@@ -522,6 +562,7 @@ export default function Inbox({
     lastMessage.current = '';
     setNewMessages(0);
     setShowGroups(false);
+    setDetailsOpen(false);
     setFindOpen(false);
     setFindQuery('');
     setMatchIndex(0);
@@ -573,6 +614,9 @@ export default function Inbox({
     input.style.height = `${Math.min(input.scrollHeight, window.matchMedia('(max-width: 760px)').matches ? 100 : 130)}px`;
     if (follow.current && history.current) history.current.scrollTop = history.current.scrollHeight;
   }, [id, draft]);
+  useLayoutEffect(() => {
+    if (follow.current && history.current) history.current.scrollTop = history.current.scrollHeight;
+  }, [detailsOpen, compactDetails]);
   const jumpLatest = useCallback(() => {
     follow.current = true;
     setNewMessages(0);
@@ -700,7 +744,7 @@ export default function Inbox({
       setRetrying('');
     }
   }
-  const filtered = groups.filter(
+  const filtered = filterChatScope(groups, scope, unread, drafts).filter(
     (g) =>
       (filter === 'all' || g.platform === filter) &&
       `${g.name} ${g.external_id} ${platformName(g)}`.toLowerCase().includes(search.trim().toLowerCase()),
@@ -733,9 +777,12 @@ export default function Inbox({
           </div>
         </div>
       </div>
-      <div className={`inbox-shell ${showGroups ? 'show-group-list' : ''}`}>
+      <div
+        className={`inbox-shell ${showGroups ? 'show-group-list' : ''} ${detailsOpen ? 'details-open' : ''}`}
+      >
         <aside
           className="inbox-groups"
+          inert={detailsOpen && compactDetails}
           aria-label="聊天社群列表"
           onKeyDown={(event) => {
             if (event.key === 'Escape') setShowGroups(false);
@@ -794,6 +841,30 @@ export default function Inbox({
               </button>
             ))}
           </div>
+          <div className="inbox-scope" aria-label="筛选聊天进度">
+            {[
+              ['all', '全部', groups.length],
+              ['unread', '未读', groups.filter((g) => unread.has(g.id)).length],
+              ['drafts', '草稿', groups.filter((g) => drafts[g.id]?.trim()).length],
+            ].map(([key, label, count]) => (
+              <button
+                key={key}
+                aria-pressed={scope === key}
+                title={
+                  key === 'unread'
+                    ? '记录本次消息页打开期间的新消息；刷新后重新计数'
+                    : key === 'drafts'
+                      ? '当前浏览器标签页中尚未发送的文字草稿'
+                      : undefined
+                }
+                className={scope === key ? 'active' : ''}
+                onClick={() => setScope(String(key))}
+              >
+                {label}
+                <span>{count}</span>
+              </button>
+            ))}
+          </div>
           <div className="inbox-group-items">
             {filtered.length ? (
               filtered.map((g) => (
@@ -830,13 +901,22 @@ export default function Inbox({
             ) : (
               <div className="inbox-small-empty">
                 <Search size={22} />
-                <p>{groups.length ? '没有匹配的社群' : '还没有连接社群'}</p>
+                <p>
+                  {groups.length
+                    ? scope === 'unread'
+                      ? '暂时没有未读讨论'
+                      : scope === 'drafts'
+                        ? '暂时没有待续写的草稿'
+                        : '没有匹配的社群'
+                    : '还没有连接社群'}
+                </p>
                 {groups.length ? (
                   <button
                     className="text-button"
                     onClick={() => {
                       setSearch('');
                       setFilter('all');
+                      setScope('all');
                     }}
                   >
                     重置筛选
@@ -854,7 +934,11 @@ export default function Inbox({
             仅显示已启用同步的社群
           </div>
         </aside>
-        <section className="inbox-conversation" aria-label="当前社群聊天" inert={showGroups}>
+        <section
+          className="inbox-conversation"
+          aria-label="当前社群聊天"
+          inert={showGroups || (detailsOpen && compactDetails)}
+        >
           {!id ? (
             <div className="inbox-empty">
               <MessageSquare size={36} />
@@ -888,7 +972,8 @@ export default function Inbox({
                     )}
                     {snapshot && (
                       <span className={`inbox-send-availability ${room?.can_send ? 'ready' : ''}`}>
-                        {' · '}{room?.can_send ? '可发送' : '暂不可发送'}
+                        {' · '}
+                        {room?.can_send ? '可发送' : '暂不可发送'}
                       </span>
                     )}
                   </p>
@@ -912,6 +997,17 @@ export default function Inbox({
                     <Settings2 size={16} />
                     管理社群
                   </Link>
+                  <button
+                    ref={detailButton}
+                    className={`icon-btn ${detailsOpen ? 'active' : ''}`}
+                    aria-label="查看社群资料和快捷操作"
+                    aria-expanded={detailsOpen}
+                    aria-controls="chat-room-details"
+                    onClick={() => setDetailsOpen((value) => !value)}
+                    title="社群资料与快捷操作"
+                  >
+                    <Info size={19} />
+                  </button>
                   <button
                     className="icon-btn"
                     aria-label="刷新当前聊天"
@@ -1375,6 +1471,111 @@ export default function Inbox({
             </>
           )}
         </section>
+        {detailsOpen && room && (
+          <aside
+            id="chat-room-details"
+            className="inbox-details-panel"
+            role={compactDetails ? 'dialog' : undefined}
+            aria-modal={compactDetails || undefined}
+            aria-label="社群资料和快捷操作"
+            ref={details}
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setDetailsOpen(false);
+                requestAnimationFrame(() => detailButton.current?.focus());
+              }
+            }}
+          >
+            <header>
+              <h3>社群资料</h3>
+              <button
+                className="icon-btn"
+                aria-label="关闭社群资料"
+                onClick={() => {
+                  setDetailsOpen(false);
+                  requestAnimationFrame(() => detailButton.current?.focus());
+                }}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <span className={`inbox-group-avatar ${room.platform}`}>
+              <Users size={24} />
+            </span>
+            <h2>{room.name}</h2>
+            <p>
+              {platformName(room)} · {room.kind === 'channel' ? '频道' : '群聊'}
+            </p>
+            <dl>
+              <div>
+                <dt>成员人数</dt>
+                <dd>{room.member_count ?? '未知'}</dd>
+              </div>
+              <div>
+                <dt>连接账号</dt>
+                <dd>{room.account_name ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>社群 ID</dt>
+                <dd>{room.external_id ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>发送状态</dt>
+                <dd className={room.can_send ? 'text-success' : 'text-warning'}>
+                  {room.can_send ? '可以发送' : '暂不可发送'}
+                </dd>
+              </div>
+            </dl>
+            <h4>快捷操作</h4>
+            {[
+              [`/groups/${id}?tab=policy`, '管理规则', ShieldCheck],
+              [`/groups/${id}?tab=keywords`, '关键词回复', MessageSquare],
+              [`/groups/${id}?tab=permissions`, '平台权限', Settings2],
+            ].map(([href, label, Icon]) => {
+              const EntryIcon = Icon as typeof ShieldCheck;
+              return (
+                <Link key={String(href)} to={String(href)} className="room-quick-link">
+                  <EntryIcon size={17} />
+                  <span>{String(label)}</span>
+                  <ChevronRight size={14} />
+                </Link>
+              );
+            })}
+            {['telegram', 'qq', 'binance'].includes(room.platform) && (
+              <Link
+                className="room-quick-link"
+                to={`/accounts?groups=${encodeURIComponent(room.account_id ?? room.executor_account_id ?? '')}`}
+              >
+                <Radio size={17} />
+                <span>选择同步社群</span>
+                <ChevronRight size={14} />
+              </Link>
+            )}
+            {['telegram', 'binance'].includes(room.platform) && room.kind === 'group' && (
+              <Link className="room-quick-link" to={`/groups/${id}?tab=members`}>
+                <Users size={17} />
+                <span>成员管理</span>
+                <ChevronRight size={14} />
+              </Link>
+            )}
+            {room.platform === 'qq' && room.kind === 'group' && (
+              <Link className="room-quick-link" to={`/groups/${id}?tab=qq-verifications`}>
+                <Users size={17} />
+                <span>活人验证</span>
+                <ChevronRight size={14} />
+              </Link>
+            )}
+            {room.platform === 'qq' && room.kind === 'group' && (
+              <Link className="room-quick-link" to={`/groups/${id}?tab=qq-requests`}>
+                <ShieldCheck size={17} />
+                <span>入群审核</span>
+                <ChevronRight size={14} />
+              </Link>
+            )}
+            <small>操作前会重新核对平台权限，执行结果在对应页面显示。</small>
+          </aside>
+        )}
       </div>
     </>
   );

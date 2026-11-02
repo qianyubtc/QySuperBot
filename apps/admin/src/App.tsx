@@ -1,14 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import {
-  Link,
-  NavLink,
-  Route,
-  Routes,
-  useLocation,
-  useParams,
-  useSearchParams,
-} from 'react-router-dom';
+import { Link, NavLink, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   ArrowDownLeft,
@@ -29,12 +21,16 @@ import {
   ImagePlus,
   KeyRound,
   LayoutDashboard,
+  LayoutGrid,
+  List,
   LoaderCircle,
   LogOut,
   Menu,
   MessageSquare,
   MoreHorizontal,
   Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Radio,
   RefreshCw,
   Search,
@@ -62,6 +58,8 @@ import QQRequests from './QQRequests';
 import VerificationList from './VerificationList';
 import KeywordRules from './KeywordRules';
 import { CopyButton, QuickNavigate } from './ConsoleTools';
+import { selectedAvailableIds, sortDirectory } from './workbench';
+import './workbench.css';
 
 type Data = Record<string, any>;
 const labels: Record<string, string> = {
@@ -135,15 +133,12 @@ const Context = createContext<{
 const useApp = () => useContext(Context);
 function useData<T = any>(path: string, poll = false) {
   const { revision } = useApp();
-  const [result, setResult] = useState<{ path: string; data?: T; error: string; loading: boolean }>(
-    {
-      path,
-      error: '',
-      loading: true,
-    },
-  );
-  const current =
-    result.path === path ? result : { path, data: undefined, error: '', loading: true };
+  const [result, setResult] = useState<{ path: string; data?: T; error: string; loading: boolean }>({
+    path,
+    error: '',
+    loading: true,
+  });
+  const current = result.path === path ? result : { path, data: undefined, error: '', loading: true };
   useEffect(() => {
     let controller: AbortController | undefined;
     let active = true;
@@ -255,15 +250,7 @@ function Empty({
     </div>
   );
 }
-function Loading({
-  error,
-  loading,
-  children,
-}: {
-  error: string;
-  loading: boolean;
-  children: ReactNode;
-}) {
+function Loading({ error, loading, children }: { error: string; loading: boolean; children: ReactNode }) {
   return loading ? (
     <div className="loading">
       <LoaderCircle className="spin" size={22} />
@@ -376,6 +363,7 @@ function ActionForm({
   disabled = false,
   className,
   summary,
+  submitHidden = false,
 }: {
   onSubmit: (data: FormData) => Promise<unknown>;
   children: ReactNode;
@@ -384,6 +372,7 @@ function ActionForm({
   disabled?: boolean;
   className?: string;
   summary?: ReactNode;
+  submitHidden?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -420,7 +409,7 @@ function ActionForm({
             取消
           </button>
         )}
-        <button disabled={busy || disabled} className="btn primary" type="submit">
+        <button hidden={submitHidden} disabled={busy || disabled} className="btn primary" type="submit">
           {busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />} {label}
         </button>
       </div>
@@ -463,11 +452,7 @@ function GroupChoices({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select
-            aria-label="筛选群发平台"
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
-          >
+          <select aria-label="筛选群发平台" value={platform} onChange={(e) => setPlatform(e.target.value)}>
             <option value="all">全部平台</option>
             {['telegram', 'qq', 'binance', 'custom'].map((p) => (
               <option key={p} value={p}>
@@ -482,9 +467,7 @@ function GroupChoices({
               setSelected((current) => [
                 ...new Set([
                   ...current,
-                  ...visible
-                    .filter((g) => allowOffline || groupAccountOnline(g, accounts))
-                    .map((g) => g.id),
+                  ...visible.filter((g) => allowOffline || groupAccountOnline(g, accounts)).map((g) => g.id),
                 ]),
               ])
             }
@@ -494,9 +477,7 @@ function GroupChoices({
           <button type="button" className="text-button" onClick={() => setSelected([])}>
             清空
           </button>
-          <small>
-            已选 {selected.filter((id) => choices.some((g) => g.id === id)).length} 个群
-          </small>
+          <small>已选 {selected.filter((id) => choices.some((g) => g.id === id)).length} 个群</small>
         </div>
       )}
       {sendable &&
@@ -512,10 +493,7 @@ function GroupChoices({
               value={g.id}
               checked={sendable ? selected.includes(g.id) : undefined}
               disabled={
-                sendable &&
-                !allowOffline &&
-                !groupAccountOnline(g, accounts) &&
-                !selected.includes(g.id)
+                sendable && !allowOffline && !groupAccountOnline(g, accounts) && !selected.includes(g.id)
               }
               onChange={
                 sendable
@@ -540,9 +518,7 @@ function GroupChoices({
           </label>
         ))
       ) : (
-        <p className="muted">
-          {sendable ? '没有符合筛选条件且已启用同步的群。' : '请先连接账号并发现群。'}
-        </p>
+        <p className="muted">{sendable ? '没有符合筛选条件且已启用同步的群。' : '请先连接账号并发现群。'}</p>
       )}
     </div>
   );
@@ -615,11 +591,55 @@ export default function App() {
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState<{ text: string; error: boolean }>();
   const [mobile, setMobile] = useState(false);
+  const [compactNav, setCompactNav] = useState(() => {
+    try {
+      return localStorage.getItem('superbot:compact-nav') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const sidebar = useRef<HTMLElement>(null);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [smallScreen, setSmallScreen] = useState(
-    () => window.matchMedia('(max-width: 760px)').matches,
-  );
+  const [smallScreen, setSmallScreen] = useState(() => window.matchMedia('(max-width: 760px)').matches);
   const location = useLocation();
+  useEffect(() => {
+    try {
+      localStorage.setItem('superbot:compact-nav', String(compactNav));
+    } catch {
+      /* Optional preference. */
+    }
+  }, [compactNav]);
+  useEffect(() => {
+    if (!user || !mobile || !smallScreen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    sidebar.current?.querySelector<HTMLElement>('a, button')?.focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const items = Array.from(
+        sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)') ?? [],
+      ).filter((item) => item.getClientRects().length);
+      const first = items[0],
+        last = items.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', trap);
+    return () => {
+      document.body.style.overflow = overflow;
+      document.removeEventListener('keydown', trap);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [mobile, smallScreen, user]);
+  useEffect(() => {
+    if (!location.pathname.startsWith('/inbox')) window.scrollTo(0, 0);
+  }, [location.pathname]);
   useEffect(() => {
     const previous = document.title;
     document.title = '千羽 Superbot · 社群管理';
@@ -694,9 +714,7 @@ export default function App() {
       } catch (error) {
         if (live)
           setAccountsError(
-            controller.signal.aborted
-              ? '连接状态读取超时，请检查后台网络后重试'
-              : (error as Error).message,
+            controller.signal.aborted ? '连接状态读取超时，请检查后台网络后重试' : (error as Error).message,
           );
       } finally {
         clearTimeout(timeout);
@@ -733,11 +751,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const shortcut = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.key.toLowerCase() === 'k' &&
-        !event.isComposing
-      ) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k' && !event.isComposing) {
         if (!quickOpen && document.querySelector('[aria-modal="true"], dialog[open]')) return;
         event.preventDefault();
         setQuickOpen((value) => !value);
@@ -783,26 +797,34 @@ export default function App() {
       />
     );
   const current = nav.find((v) =>
-    v.path === '/dashboard'
-      ? location.pathname === '/dashboard'
-      : location.pathname.startsWith(v.path),
+    v.path === '/dashboard' ? location.pathname === '/dashboard' : location.pathname.startsWith(v.path),
   );
   return (
     <Context.Provider
       value={{ groups, accounts, revision, refresh, toast, accountsError, accountsCheckedAt }}
     >
       <div
-        className={`shell ${mobile ? 'menu-open' : ''} ${location.pathname.startsWith('/inbox') ? 'is-inbox' : ''}`}
+        className={`shell ${mobile ? 'menu-open' : ''} ${compactNav ? 'nav-compact' : ''} ${location.pathname.startsWith('/inbox') ? 'is-inbox' : ''}`}
       >
-        {mobile && (
-          <button className="nav-scrim" aria-label="关闭菜单" onClick={() => setMobile(false)} />
-        )}
+        <a className="skip-link" href="#workspace-main">
+          跳到页面内容
+        </a>
+        {mobile && <button className="nav-scrim" aria-label="关闭菜单" onClick={() => setMobile(false)} />}
         <aside
+          ref={sidebar}
           className="sidebar"
+          aria-label="主导航"
           inert={smallScreen && !mobile}
           aria-hidden={smallScreen && !mobile}
         >
-          <Link to="/dashboard" className="brand">
+          <button
+            className="icon-btn nav-mobile-close"
+            aria-label="关闭主导航"
+            onClick={() => setMobile(false)}
+          >
+            <X size={20} />
+          </button>
+          <Link to="/dashboard" className="brand" aria-label="千羽 Superbot 工作概览">
             <span className="brand-mark">
               <Bot size={25} />
             </span>
@@ -817,19 +839,40 @@ export default function App() {
             </div>
             <span className="workspace-plan">管理台</span>
           </div>
-          <div className="nav-label">管理空间</div>
           <nav>
             {nav.map(({ path, label, icon: Icon }) => (
-              <NavLink key={path} to={path} end={path === '/dashboard'}>
-                <Icon size={18} />
-                <span>{label}</span>
-                {path === '/groups' && <b>{groups.length}</b>}
-              </NavLink>
+              <div className="nav-entry" key={path}>
+                {['/dashboard', '/moderation', '/accounts'].includes(path) && (
+                  <div className="nav-label">
+                    {path === '/dashboard' ? '工作台' : path === '/moderation' ? '社群运营' : '连接与设置'}
+                  </div>
+                )}
+                <NavLink
+                  to={path}
+                  end={path === '/dashboard'}
+                  title={compactNav ? label : undefined}
+                  aria-label={label}
+                >
+                  <Icon size={18} />
+                  <span>{label}</span>
+                  {path === '/groups' && <b>{groups.length}</b>}
+                </NavLink>
+              </div>
             ))}
           </nav>
           <div className="sidebar-bottom">
+            <button
+              className="nav-collapse"
+              onClick={() => setCompactNav((value) => !value)}
+              aria-label={compactNav ? '展开导航栏' : '收起导航栏'}
+            >
+              {compactNav ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              <span>收起导航栏</span>
+            </button>
             <div className="system-state">
-              <span className="live-dot" />
+              <span
+                className={`live-dot ${accountsError || accounts.some((a) => !a.is_demo && !['online', 'paused'].includes(accountState(a))) ? 'needs-attention' : ''}`}
+              />
               <span>
                 {accountsError
                   ? '连接状态更新异常'
@@ -864,13 +907,14 @@ export default function App() {
             </div>
           </div>
         </aside>
-        <div className="main-shell">
+        <div className="main-shell" inert={smallScreen && mobile}>
           <header className="topbar">
             <div className="breadcrumb">
               <button
                 className="icon-btn mobile-menu"
                 onClick={() => setMobile(true)}
                 aria-label="打开菜单"
+                aria-expanded={mobile}
               >
                 <Menu size={20} />
               </button>
@@ -918,7 +962,7 @@ export default function App() {
               <span className="top-avatar">{(user.name ?? user.username ?? '千').slice(0, 1)}</span>
             </div>
           </header>
-          <main>
+          <main id="workspace-main" tabIndex={-1}>
             <Routes>
               <Route path="/dashboard" element={<Overview />} />
               <Route path="/groups" element={<Groups />} />
@@ -939,10 +983,7 @@ export default function App() {
               <Route path="/accounts" element={<Accounts />} />
               <Route path="/integrations" element={<Integrations />} />
               <Route path="/audit" element={<Audit />} />
-              <Route
-                path="*"
-                element={<Empty title="页面不存在" text="请通过左侧导航继续操作。" />}
-              />
+              <Route path="*" element={<Empty title="页面不存在" text="请通过左侧导航继续操作。" />} />
             </Routes>
             <footer className="page-footer">
               <span>千羽 Superbot</span>
@@ -951,11 +992,28 @@ export default function App() {
             </footer>
           </main>
         </div>
+        <nav className="mobile-dock" aria-label="常用页面" inert={smallScreen && mobile}>
+          {[nav[1]!, nav[2]!, nav[4]!, nav[6]!].map(({ path, label, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              <Icon size={20} />
+              <span>
+                {label === '群与频道'
+                  ? '社群'
+                  : label === '群发与通知'
+                    ? '群发'
+                    : label === '连接账号'
+                      ? '账号'
+                      : '消息'}
+              </span>
+            </NavLink>
+          ))}
+          <button onClick={() => setMobile(true)} aria-label="打开全部功能">
+            <Menu size={20} />
+            <span>更多</span>
+          </button>
+        </nav>
         {notice && (
-          <div
-            className={`toast ${notice.error ? 'error' : ''}`}
-            role={notice.error ? 'alert' : 'status'}
-          >
+          <div className={`toast ${notice.error ? 'error' : ''}`} role={notice.error ? 'alert' : 'status'}>
             {notice.error ? <ShieldX size={18} /> : <CheckCircle2 size={18} />} {notice.text}
             <button className="icon-btn" aria-label="关闭提示" onClick={() => setNotice(undefined)}>
               <X size={16} />
@@ -971,15 +1029,7 @@ export default function App() {
     </Context.Provider>
   );
 }
-function Auth({
-  setup,
-  needsToken,
-  done,
-}: {
-  setup: boolean;
-  needsToken: boolean;
-  done: (v: Data) => void;
-}) {
+function Auth({ setup, needsToken, done }: { setup: boolean; needsToken: boolean; done: (v: Data) => void }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -1042,9 +1092,7 @@ function Auth({
         <div className="auth-card">
           <span className="eyebrow">WELCOME TO SUPERBOT</span>
           <h1>{setup ? '创建你的工作空间' : '欢迎回来'}</h1>
-          <p>
-            {setup ? '设置第一个管理员，开始连接你的社群。' : '登录管理台，继续今天的社群工作。'}
-          </p>
+          <p>{setup ? '设置第一个管理员，开始连接你的社群。' : '登录管理台，继续今天的社群工作。'}</p>
           <form onSubmit={submit}>
             <label>
               管理员用户名
@@ -1207,9 +1255,7 @@ function Overview() {
                     <i />
                     判定违规
                   </span>
-                  <small>
-                    {d.demo_accounts > 0 ? '按北京时间统计 · 含演示数据' : '按北京时间统计'}
-                  </small>
+                  <small>{d.demo_accounts > 0 ? '按北京时间统计 · 含演示数据' : '按北京时间统计'}</small>
                 </div>
               </section>
               <section className="card connection-card">
@@ -1221,9 +1267,7 @@ function Overview() {
                 </div>
                 <div className="connection-total">
                   <strong>
-                    {accountsCheckedAt
-                      ? accounts.filter((a) => accountState(a) === 'online').length
-                      : '—'}
+                    {accountsCheckedAt ? accounts.filter((a) => accountState(a) === 'online').length : '—'}
                     <small> / {d.accounts}</small>
                   </strong>
                   <span>账号在线</span>
@@ -1314,8 +1358,7 @@ function Chart({ series }: { series: Data[] }) {
     h = 185,
     x = (i: number) => 38 + (i * (w - 58)) / 6,
     y = (v: number) => h - 22 - (v / max) * (h - 42);
-  const line = (key: string) =>
-    series.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v[key])}`).join(' ');
+  const line = (key: string) => series.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v[key])}`).join(' ');
   return (
     <div className="chart">
       <svg
@@ -1344,34 +1387,12 @@ function Chart({ series }: { series: Data[] }) {
             </text>
           </g>
         ))}
-        <path
-          d={`${line('messages')} L${x(6)},${y(0)} L${x(0)},${y(0)} Z`}
-          fill="url(#chartFill)"
-        />
-        <path
-          d={line('messages')}
-          fill="none"
-          stroke="#349c79"
-          strokeWidth="2.5"
-          strokeLinejoin="round"
-        />
-        <path
-          d={line('blocked')}
-          fill="none"
-          stroke="#e2a55d"
-          strokeWidth="2"
-          strokeDasharray="4 4"
-        />
+        <path d={`${line('messages')} L${x(6)},${y(0)} L${x(0)},${y(0)} Z`} fill="url(#chartFill)" />
+        <path d={line('messages')} fill="none" stroke="#349c79" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d={line('blocked')} fill="none" stroke="#e2a55d" strokeWidth="2" strokeDasharray="4 4" />
         {series.map((v, i) => (
           <g key={v.date}>
-            <circle
-              cx={x(i)}
-              cy={y(v.messages)}
-              r="3.5"
-              stroke="#349c79"
-              strokeWidth="2"
-              fill="white"
-            >
+            <circle cx={x(i)} cy={y(v.messages)} r="3.5" stroke="#349c79" strokeWidth="2" fill="white">
               <title>
                 {v.date}：{v.messages} 条消息，{v.blocked} 条判定违规
               </title>
@@ -1430,11 +1451,7 @@ function GroupTable({ groups, compact = false }: { groups: Data[]; compact?: boo
               <td data-label="同步与规则">
                 <Badge
                   value={
-                    g.sync_enabled === false
-                      ? 'paused'
-                      : g.account_status === 'online'
-                        ? 'online'
-                        : 'pending'
+                    g.sync_enabled === false ? 'paused' : g.account_status === 'online' ? 'online' : 'pending'
                   }
                 >
                   {g.sync_enabled === false
@@ -1451,20 +1468,12 @@ function GroupTable({ groups, compact = false }: { groups: Data[]; compact?: boo
               <td>
                 <div className="table-row-actions">
                   {g.sync_enabled !== false && (
-                    <Link
-                      className="text-link"
-                      to={`/inbox/${g.id}`}
-                      aria-label={`打开${g.name}的聊天`}
-                    >
+                    <Link className="text-link" to={`/inbox/${g.id}`} aria-label={`打开${g.name}的聊天`}>
                       <MessageSquare size={15} />
                       聊天
                     </Link>
                   )}
-                  <Link
-                    className="text-link"
-                    aria-label={`管理${g.name}`}
-                    to={`/groups/${g.id}?tab=policy`}
-                  >
+                  <Link className="text-link" aria-label={`管理${g.name}`} to={`/groups/${g.id}?tab=policy`}>
                     <Settings2 size={15} />
                     设置
                   </Link>
@@ -1480,11 +1489,14 @@ function GroupTable({ groups, compact = false }: { groups: Data[]; compact?: boo
   );
 }
 function Groups() {
-  const { groups } = useApp();
+  const { groups, accounts } = useApp();
   const [params, setParams] = useSearchParams();
   const search = params.get('q') ?? '';
   const platform = params.get('platform') ?? 'all';
   const scope = params.get('scope') ?? 'all';
+  const account = params.get('account') ?? 'all';
+  const order = params.get('sort') ?? 'activity';
+  const view = params.get('view') === 'list' ? 'list' : 'cards';
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (!value || value === 'all') next.delete(key);
@@ -1492,14 +1504,20 @@ function Groups() {
     setParams(next, { replace: true });
   };
   const selectedCount = groups.filter((g) => g.sync_enabled !== false).length;
-  const filtered = groups.filter(
-    (g) =>
-      (platform === 'all' || g.platform === platform) &&
-      (scope === 'all' ||
-        (scope === 'enabled' ? g.sync_enabled !== false : g.sync_enabled === false)) &&
-      `${g.name} ${g.external_id} ${g.account_name}`
-        .toLowerCase()
-        .includes(search.trim().toLowerCase()),
+  const filtered = sortDirectory(
+    groups.filter(
+      (g) =>
+        (platform === 'all' || g.platform === platform) &&
+        (scope === 'all' ||
+          (scope === 'enabled'
+            ? g.sync_enabled !== false
+            : scope === 'attention'
+              ? g.sync_enabled !== false && !groupAccountOnline(g, accounts)
+              : g.sync_enabled === false)) &&
+        (account === 'all' || g.executor_account_id === account) &&
+        `${g.name} ${g.external_id} ${g.account_name}`.toLowerCase().includes(search.trim().toLowerCase()),
+    ) as (Data & { id: string; name: string })[],
+    order,
   );
   return (
     <>
@@ -1530,9 +1548,7 @@ function Groups() {
           <ShieldCheck size={19} />
           <span>
             待验证成员
-            <strong>
-              {n(groups.reduce((sum, g) => sum + Number(g.pending_verifications ?? 0), 0))}
-            </strong>
+            <strong>{n(groups.reduce((sum, g) => sum + Number(g.pending_verifications ?? 0), 0))}</strong>
           </span>
         </div>
         <div>
@@ -1543,7 +1559,7 @@ function Groups() {
           </span>
         </div>
       </div>
-      <div className="card">
+      <div className={`card directory-card view-${view}`}>
         <div className="filter-bar">
           <div className="tabs">
             {[
@@ -1560,9 +1576,7 @@ function Groups() {
                 aria-pressed={platform === key}
               >
                 {name}
-                <span>
-                  {key === 'all' ? groups.length : groups.filter((g) => g.platform === key).length}
-                </span>
+                <span>{key === 'all' ? groups.length : groups.filter((g) => g.platform === key).length}</span>
               </button>
             ))}
           </div>
@@ -1593,6 +1607,7 @@ function Groups() {
                 ['all', '全部'],
                 ['enabled', '已选同步'],
                 ['disabled', '未同步'],
+                ['attention', '连接异常'],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1607,15 +1622,154 @@ function Groups() {
                     ? groups.length
                     : key === 'enabled'
                       ? selectedCount
-                      : groups.length - selectedCount}
+                      : key === 'disabled'
+                        ? groups.length - selectedCount
+                        : groups.filter((g) => g.sync_enabled !== false && !groupAccountOnline(g, accounts))
+                            .length}
                 </span>
               </button>
             ))}
           </div>
-          <span>显示 {filtered.length} 个社群</span>
+          <div className="directory-options">
+            <select
+              aria-label="按连接账号筛选社群"
+              value={account}
+              onChange={(e) => updateFilter('account', e.target.value)}
+            >
+              <option value="all">全部连接账号</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="社群排序方式"
+              value={order}
+              onChange={(e) => updateFilter('sort', e.target.value)}
+            >
+              <option value="activity">消息活跃优先</option>
+              <option value="name">名称排序</option>
+              <option value="members">成员数量优先</option>
+            </select>
+            <div className="view-switch" aria-label="社群显示方式">
+              <button
+                className="icon-btn"
+                aria-label="卡片视图"
+                aria-pressed={view === 'cards'}
+                onClick={() => updateFilter('view', 'cards')}
+              >
+                <LayoutGrid size={17} />
+              </button>
+              <button
+                className="icon-btn"
+                aria-label="列表视图"
+                aria-pressed={view === 'list'}
+                onClick={() => updateFilter('view', 'list')}
+              >
+                <List size={18} />
+              </button>
+            </div>
+          </div>
         </div>
+        {(search || platform !== 'all' || scope !== 'all' || account !== 'all') && (
+          <div className="active-filter-summary">
+            <span>
+              找到 {filtered.length} 个社群{search ? ` · “${search}”` : ''}
+            </span>
+            <button
+              className="text-button"
+              onClick={() => {
+                const next = new URLSearchParams();
+                if (view === 'list') next.set('view', 'list');
+                setParams(next, { replace: true });
+              }}
+            >
+              <X size={13} />
+              清除筛选
+            </button>
+          </div>
+        )}
         {filtered.length || !groups.length ? (
-          <GroupTable groups={filtered} />
+          view === 'list' || !filtered.length ? (
+            <GroupTable groups={filtered} />
+          ) : (
+            <div className="community-grid">
+              {filtered.map((g) => (
+                <article className="community-card" key={g.id}>
+                  <header>
+                    <span className={`large-platform ${g.platform}`}>
+                      {g.kind === 'channel' ? <Radio size={22} /> : <Users size={22} />}
+                    </span>
+                    <Platform value={g.platform} demo={g.is_demo} />
+                    <span
+                      className={`community-sync ${g.sync_enabled === false ? 'paused' : groupAccountOnline(g, accounts) ? 'online' : 'error'}`}
+                    >
+                      <i />
+                      {g.sync_enabled === false
+                        ? '未同步'
+                        : groupAccountOnline(g, accounts)
+                          ? '同步中'
+                          : '连接异常'}
+                    </span>
+                  </header>
+                  <Link className="community-title" to={`/groups/${g.id}?tab=policy`}>
+                    <h2>{g.name}</h2>
+                    <ChevronRight size={16} />
+                  </Link>
+                  <p>
+                    {g.account_name || '连接账号'} · {g.external_id}
+                  </p>
+                  <div className="community-numbers">
+                    <span>
+                      <strong>{g.member_count == null ? '—' : n(g.member_count)}</strong>成员
+                    </span>
+                    <span>
+                      <strong>{n(g.messages_24h)}</strong>24h 消息
+                    </span>
+                    <span>
+                      <strong>{n(g.pending_verifications)}</strong>待验证
+                    </span>
+                  </div>
+                  <div className="community-tags">
+                    <span>
+                      <ShieldCheck size={13} />
+                      {g.policy.mode === 'enforce' ? '自动处理规则' : '规则观察中'}
+                    </span>
+                    {g.pending_verifications > 0 && (
+                      <Link to={`/groups/${g.id}?tab=${g.platform === 'qq' ? 'qq-verifications' : 'policy'}`}>
+                        查看待验证成员
+                      </Link>
+                    )}
+                  </div>
+                  <footer>
+                    <Link
+                      className="btn primary"
+                      to={
+                        g.sync_enabled !== false
+                          ? `/inbox/${g.id}`
+                          : `/accounts?groups=${encodeURIComponent(g.executor_account_id)}`
+                      }
+                    >
+                      {g.sync_enabled !== false ? <MessageSquare size={15} /> : <Radio size={15} />}
+                      {g.sync_enabled !== false ? '打开聊天' : '选择同步'}
+                    </Link>
+                    <Link className="btn" to={`/groups/${g.id}?tab=keywords`}>
+                      关键词
+                    </Link>
+                    <Link
+                      className="icon-btn"
+                      aria-label={`管理${g.name}规则`}
+                      title="管理规则"
+                      to={`/groups/${g.id}?tab=policy`}
+                    >
+                      <Settings2 size={17} />
+                    </Link>
+                  </footer>
+                </article>
+              ))}
+            </div>
+          )
         ) : (
           <div>
             <Empty
@@ -1653,9 +1807,7 @@ function GroupDetail() {
     ['policy', '管理规则'],
     ['keywords', '关键词触发'],
     ['permissions', '平台能力'],
-    ...(['telegram', 'binance'].includes(g?.platform) && g.kind === 'group'
-      ? [['members', '成员管理']]
-      : []),
+    ...(['telegram', 'binance'].includes(g?.platform) && g.kind === 'group' ? [['members', '成员管理']] : []),
     ...(g?.platform === 'qq' && g.kind === 'group'
       ? [
           ['qq-requests', '入群审核'],
@@ -1728,20 +1880,14 @@ function GroupDetail() {
                     {name}
                     {key === 'qq-verifications' &&
                       g.verifications?.some((v: Data) =>
-                        ['pending', 'failed', 'expired', 'manual_review', 'cooldown'].includes(
-                          v.status,
-                        ),
+                        ['pending', 'failed', 'expired', 'manual_review', 'cooldown'].includes(v.status),
                       ) && (
                         <span>
                           {
                             g.verifications.filter((v: Data) =>
-                              [
-                                'pending',
-                                'failed',
-                                'expired',
-                                'manual_review',
-                                'cooldown',
-                              ].includes(v.status),
+                              ['pending', 'failed', 'expired', 'manual_review', 'cooldown'].includes(
+                                v.status,
+                              ),
                             ).length
                           }
                         </span>
@@ -1778,10 +1924,7 @@ function GroupDetail() {
                         </div>
                       ))
                     ) : (
-                      <Empty
-                        title="等待第一条消息"
-                        text="接收的新消息会显示在这里；平台历史记录暂不导入。"
-                      />
+                      <Empty title="等待第一条消息" text="接收的新消息会显示在这里；平台历史记录暂不导入。" />
                     )}
                   </div>
                   {g.is_demo && (
@@ -1808,12 +1951,7 @@ function GroupDetail() {
                         <div className="form-grid">
                           <label>
                             成员 ID
-                            <input
-                              name="user_id"
-                              required
-                              defaultValue="demo-member"
-                              pattern="[\w-]{1,64}"
-                            />
+                            <input name="user_id" required defaultValue="demo-member" pattern="[\w-]{1,64}" />
                           </label>
                           <label>
                             事件
@@ -1857,8 +1995,7 @@ function GroupDetail() {
               {tab === 'permissions' && (
                 <div className="card-body">
                   <div className="info-box">
-                    实际执行前会同时检查连接器能力与账号权限。权限快照超过 5
-                    分钟会停止操作并要求刷新。
+                    实际执行前会同时检查连接器能力与账号权限。权限快照超过 5 分钟会停止操作并要求刷新。
                   </div>
                   <button
                     className="btn"
@@ -1915,16 +2052,14 @@ function GroupDetail() {
                                         unknown: '未知',
                                       } as Data
                                     )[
-                                      b.snapshot.permissions.find(
-                                        (p: Data) => p.capability === c.capability,
-                                      )?.permission ?? 'unknown'
+                                      b.snapshot.permissions.find((p: Data) => p.capability === c.capability)
+                                        ?.permission ?? 'unknown'
                                     ]
                                   }
                                 </td>
                                 <td>
-                                  {b.snapshot.permissions.find(
-                                    (p: Data) => p.capability === c.capability,
-                                  )?.reason ?? '—'}
+                                  {b.snapshot.permissions.find((p: Data) => p.capability === c.capability)
+                                    ?.reason ?? '—'}
                                 </td>
                               </tr>
                             ))}
@@ -2005,15 +2140,9 @@ function PolicyForm({ group }: { group: Data }) {
   const invalidVerification =
     verification &&
     (!options.verification?.available ||
-      (group.platform === 'qq' &&
-        timeoutAction === 'remove' &&
-        !options.verification_remove?.available) ||
-      (group.platform === 'qq' &&
-        timeoutAction === 'mute_retry' &&
-        !options.verification_mute?.available) ||
-      (group.platform === 'qq' &&
-        failedAction === 'mute' &&
-        !options.verification_mute?.available));
+      (group.platform === 'qq' && timeoutAction === 'remove' && !options.verification_remove?.available) ||
+      (group.platform === 'qq' && timeoutAction === 'mute_retry' && !options.verification_mute?.available) ||
+      (group.platform === 'qq' && failedAction === 'mute' && !options.verification_mute?.available));
   return (
     <ActionForm
       className="policy-form"
@@ -2054,9 +2183,7 @@ function PolicyForm({ group }: { group: Data }) {
       }}
     >
       {dirty && serverFingerprint !== savedPolicy && fingerprint !== serverFingerprint && (
-        <div className="info-box">
-          服务器上的规则已更新。这里保留你的编辑，点击“还原修改”可载入最新配置。
-        </div>
+        <div className="info-box">服务器上的规则已更新。这里保留你的编辑，点击“还原修改”可载入最新配置。</div>
       )}
       <div className="section-intro">
         <ShieldCheck size={21} />
@@ -2070,10 +2197,7 @@ function PolicyForm({ group }: { group: Data }) {
           运行模式
           <select name="mode" value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="observe">观察模式 · 记录命中</option>
-            <option
-              value="enforce"
-              disabled={!Object.keys(actions).some((key) => options[key]?.available)}
-            >
+            <option value="enforce" disabled={!Object.keys(actions).some((key) => options[key]?.available)}>
               自动处理 · 执行删除或移除
             </option>
           </select>
@@ -2095,14 +2219,10 @@ function PolicyForm({ group }: { group: Data }) {
         {Object.entries(actions).map(([key, label]) => (
           <p key={key}>
             {label}：
-            {options[key]?.available
-              ? '当前能力与账号权限可用'
-              : (options[key]?.reason ?? '尚未获取权限')}
+            {options[key]?.available ? '当前能力与账号权限可用' : (options[key]?.reason ?? '尚未获取权限')}
           </p>
         ))}
-        <p>
-          观察模式仅记录广告规则命中；群黑名单仍会提交处理任务。规则命中与平台执行结果分别显示。
-        </p>
+        <p>观察模式仅记录广告规则命中；群黑名单仍会提交处理任务。规则命中与平台执行结果分别显示。</p>
         <p>移出或封禁还需核对原入群批次；支持此动作不代表任意成员都可直接处理。</p>
         {unavailable && <p role="alert">所选动作当前不可用，请更换动作或切回观察模式后保存。</p>}
       </details>
@@ -2158,9 +2278,7 @@ function PolicyForm({ group }: { group: Data }) {
         />
         <span>
           <strong>开启入群验证</strong>
-          <small>
-            {verification ? '新成员入群后自动发送验证题' : '当前关闭，新的入群成员无需验证'}
-          </small>
+          <small>{verification ? '新成员入群后自动发送验证题' : '当前关闭，新的入群成员无需验证'}</small>
         </span>
       </label>
       {!options.verification?.available && (
@@ -2191,13 +2309,10 @@ function PolicyForm({ group }: { group: Data }) {
             </option>
           </select>
           {failedAction === 'mute' && !options.verification_mute?.available && (
-            <small className="error-text">
-              {options.verification_mute?.reason ?? '请刷新群管理权限'}
-            </small>
+            <small className="error-text">{options.verification_mute?.reason ?? '请刷新群管理权限'}</small>
           )}
           <small>
-            只在连续答错 3 次时触发，与单纯超时分别配置。禁言到期由 QQ
-            自动解除，人工通过验证不会自动解禁。
+            只在连续答错 3 次时触发，与单纯超时分别配置。禁言到期由 QQ 自动解除，人工通过验证不会自动解禁。
           </small>
         </label>
       )}
@@ -2226,9 +2341,7 @@ function PolicyForm({ group }: { group: Data }) {
             </small>
           )}
           {timeoutAction === 'mute_retry' && !options.verification_mute?.available && (
-            <small className="error-text">
-              {options.verification_mute?.reason ?? '请先刷新群管理权限'}
-            </small>
+            <small className="error-text">{options.verification_mute?.reason ?? '请先刷新群管理权限'}</small>
           )}
         </label>
       )}
@@ -2271,9 +2384,7 @@ function BinanceGroupsModal({
   }, [id]);
   async function load(initial = false) {
     const preserveEdits =
-      !initial &&
-      data &&
-      JSON.stringify([...selected].sort()) !== JSON.stringify([...data.group_ids].sort());
+      !initial && data && JSON.stringify([...selected].sort()) !== JSON.stringify([...data.group_ids].sort());
     setBusy(true);
     setError('');
     try {
@@ -2371,19 +2482,13 @@ function BinanceGroupsModal({
           className="text-button"
           disabled={busy}
           onClick={() =>
-            setSelected((current) =>
-              current.filter((id) => !visible.some((g: Data) => g.id === id)),
-            )
+            setSelected((current) => current.filter((id) => !visible.some((g: Data) => g.id === id)))
           }
         >
           取消当前结果
         </button>
         <label>
-          <input
-            type="checkbox"
-            checked={selectedOnly}
-            onChange={(e) => setSelectedOnly(e.target.checked)}
-          />
+          <input type="checkbox" checked={selectedOnly} onChange={(e) => setSelectedOnly(e.target.checked)} />
           仅看已选
         </label>
       </div>
@@ -2422,8 +2527,7 @@ function BinanceGroupsModal({
               type="checkbox"
               checked={selected.includes(group.id)}
               disabled={
-                busy ||
-                (!selected.includes(group.id) && (selected.length >= limit || group.unavailable))
+                busy || (!selected.includes(group.id) && (selected.length >= limit || group.unavailable))
               }
               onChange={(event) =>
                 setSelected((current) =>
@@ -2503,9 +2607,7 @@ function BinanceAuthenticationModal({
                     mode,
                     web_token: String(form.get('web_token') ?? '').trim(),
                     csrf_cookie: String(form.get('csrf_cookie') ?? '').trim(),
-                    ...(form.get('device_id')
-                      ? { device_id: String(form.get('device_id')).trim() }
-                      : {}),
+                    ...(form.get('device_id') ? { device_id: String(form.get('device_id')).trim() } : {}),
                   }
                 : { mode },
           });
@@ -2590,8 +2692,7 @@ function BinanceAuthenticationModal({
                 的值。只填写上方字段，请勿把令牌发到聊天中。
               </p>
               <p>
-                支持 JWT
-                和不透明令牌，格式本身不代表验证成功。验证失败会保留当前连接；验证过程不发送群消息。
+                支持 JWT 和不透明令牌，格式本身不代表验证成功。验证失败会保留当前连接；验证过程不发送群消息。
               </p>
             </details>
             {account.settings?.direct_auth && (
@@ -2711,8 +2812,7 @@ function Accounts() {
       } else if (name === 'binance-check')
         toast(
           !result.failed_groups &&
-            (result.connection?.state === 'connected' ||
-              result.connection?.state === 'awaiting_groups')
+            (result.connection?.state === 'connected' || result.connection?.state === 'awaiting_groups')
             ? '币安连接检查通过'
             : '检查完成，请查看连接状态和处理建议',
           !!result.failed_groups,
@@ -2738,6 +2838,34 @@ function Accounts() {
           添加连接
         </button>
       </Head>
+      <div className="connection-overview">
+        <div>
+          <span className="connection-overview-icon">
+            <Radio size={25} />
+          </span>
+          <div>
+            <h2>
+              {accounts.filter(needsAttention).length
+                ? `${accounts.filter(needsAttention).length} 个连接需要处理`
+                : accounts.length
+                  ? '社群连接尽在掌握'
+                  : '先连接你的第一个社群'}
+            </h2>
+            <p>
+              {accounts.filter(needsAttention).length
+                ? '优先恢复异常账号，原来的同步群选择会保留。'
+                : '添加账号 → 选择同步社群 → 开始收发与管理'}
+            </p>
+          </div>
+        </div>
+        <button
+          className="btn"
+          onClick={() => setStatusFilter(statusFilter === 'attention' ? 'all' : 'attention')}
+        >
+          {statusFilter === 'attention' ? '查看全部连接' : '查看需要处理'}
+          <ArrowRight size={16} />
+        </button>
+      </div>
       <div className="account-toolbar">
         <div className="segmented" aria-label="筛选账号连接状态">
           {(
@@ -2768,12 +2896,7 @@ function Accounts() {
             onChange={(e) => setQuery(e.target.value)}
           />
           {query && (
-            <button
-              className="icon-btn"
-              type="button"
-              aria-label="清空账号搜索"
-              onClick={() => setQuery('')}
-            >
+            <button className="icon-btn" type="button" aria-label="清空账号搜索" onClick={() => setQuery('')}>
               <X size={14} />
             </button>
           )}
@@ -2786,11 +2909,7 @@ function Accounts() {
               ? '状态更新失败，以下保留上次结果。'
               : '暂时无法读取连接状态，请重试。'
             : '连接状态每 10 秒自动更新。'}
-          {accountsCheckedAt
-            ? ` 最近更新 ${date(accountsCheckedAt)}`
-            : accountsError
-              ? ''
-              : ' 正在获取状态…'}
+          {accountsCheckedAt ? ` 最近更新 ${date(accountsCheckedAt)}` : accountsError ? '' : ' 正在获取状态…'}
         </span>
         {accountsError && (
           <button className="text-button" onClick={refresh}>
@@ -2800,7 +2919,10 @@ function Accounts() {
       </div>
       <div className="account-grid">
         {filteredAccounts.map((a) => (
-          <section key={a.id} className="card account-card">
+          <section
+            key={a.id}
+            className={`card account-card ${needsAttention(a) ? 'account-needs-attention' : ''}`}
+          >
             <div className="account-card-top">
               <span className={`large-platform ${a.platform}`}>
                 {a.platform === 'telegram' ? <Send size={24} /> : <MessageSquare size={24} />}
@@ -2826,9 +2948,7 @@ function Accounts() {
               </div>
             </dl>
             {a.kind !== 'binance' && !a.is_demo && (
-              <div
-                className={`account-state-note ${a.status === 'online' ? 'healthy' : 'needs-check'}`}
-              >
+              <div className={`account-state-note ${a.status === 'online' ? 'healthy' : 'needs-check'}`}>
                 {a.status === 'online' ? <CheckCircle2 size={17} /> : <CircleHelp size={17} />}
                 <div>
                   <strong>
@@ -2839,7 +2959,7 @@ function Accounts() {
                         : '连接需要处理'}
                   </strong>
                   <p>
-                    {a.last_error ||
+                    {(a.status !== 'online' && a.last_error) ||
                       (a.status === 'online'
                         ? '通过“管理同步群”选择要接收消息和管理的社群。'
                         : a.status === 'paused'
@@ -2869,16 +2989,8 @@ function Accounts() {
                     )
                   }
                 >
-                  {busy === a.id ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    <RefreshCw size={15} />
-                  )}
-                  {a.status === 'paused'
-                    ? '恢复连接'
-                    : a.kind === 'binance'
-                      ? '检查连接'
-                      : '连接 / 刷新'}
+                  {busy === a.id ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                  {a.status === 'paused' ? '恢复连接' : a.kind === 'binance' ? '检查连接' : '连接 / 刷新'}
                 </button>
                 {a.kind === 'telegram' && (
                   <button className="btn" onClick={() => setTg(a.id)}>
@@ -2894,7 +3006,10 @@ function Accounts() {
                     </button>
                   )}
                 {['binance', 'qq', 'telegram'].includes(a.kind) && (
-                  <button className="btn" onClick={() => setBinanceGroups(a.id)}>
+                  <button
+                    className={`btn ${accountState(a) === 'online' ? 'primary' : ''}`}
+                    onClick={() => setBinanceGroups(a.id)}
+                  >
                     <Settings2 size={15} />
                     管理同步群
                   </button>
@@ -2903,9 +3018,7 @@ function Accounts() {
                   <button
                     className="btn primary"
                     disabled={
-                      busy === a.id ||
-                      a.status === 'paused' ||
-                      a.connection?.login_available === false
+                      busy === a.id || a.status === 'paused' || a.connection?.login_available === false
                     }
                     title={
                       a.connection?.login_available === false
@@ -2914,11 +3027,7 @@ function Accounts() {
                     }
                     onClick={() => void openBinanceLogin(a)}
                   >
-                    {busy === a.id ? (
-                      <LoaderCircle size={15} className="spin" />
-                    ) : (
-                      <ExternalLink size={15} />
-                    )}
+                    {busy === a.id ? <LoaderCircle size={15} className="spin" /> : <ExternalLink size={15} />}
                     {a.connection?.needs_relogin ? '重新登录币安' : '登录币安'}
                   </button>
                 )}
@@ -2939,25 +3048,21 @@ function Accounts() {
                         重新扫码登录 QQ
                       </button>
                     )}
-                  {a.kind === 'binance' &&
-                    a.status === 'online' &&
-                    !a.connection?.needs_relogin && (
-                      <button
-                        className="btn"
-                        disabled={busy === a.id || a.connection?.login_available === false}
-                        onClick={() => void openBinanceLogin(a)}
-                      >
-                        打开币安登录窗口
-                      </button>
-                    )}
+                  {a.kind === 'binance' && a.status === 'online' && !a.connection?.needs_relogin && (
+                    <button
+                      className="btn"
+                      disabled={busy === a.id || a.connection?.login_available === false}
+                      onClick={() => void openBinanceLogin(a)}
+                    >
+                      打开币安登录窗口
+                    </button>
+                  )}
                   {a.kind === 'binance' && (
                     <button
                       className="btn"
                       disabled={busy === a.id || a.status === 'paused'}
                       onClick={() =>
-                        import.meta.env.MODE === 'demo'
-                          ? void openBinanceLogin(a)
-                          : setBinanceAuth(a)
+                        import.meta.env.MODE === 'demo' ? void openBinanceLogin(a) : setBinanceAuth(a)
                       }
                     >
                       <KeyRound size={15} />
@@ -2995,11 +3100,7 @@ function Accounts() {
       </div>
       {!filteredAccounts.length && accounts.length > 0 && (
         <div className="card">
-          <Empty
-            icon={Search}
-            title="没有符合条件的账号"
-            text="调整关键词或状态筛选，查看其他连接。"
-          />
+          <Empty icon={Search} title="没有符合条件的账号" text="调整关键词或状态筛选，查看其他连接。" />
           <div className="empty-action">
             <button
               className="btn"
@@ -3013,7 +3114,12 @@ function Accounts() {
           </div>
         </div>
       )}
-      <div className="card roadmap">
+      <details className="card roadmap connection-help">
+        <summary>
+          <CircleHelp size={18} />
+          平台接入与能力说明
+          <ChevronDown size={16} />
+        </summary>
         <div>
           <Radio size={23} />
           <div>
@@ -3025,7 +3131,7 @@ function Accounts() {
           </div>
         </div>
         <span className="tag">分阶段接入</span>
-      </div>
+      </details>
       {add && (
         <Modal
           title="添加平台连接"
@@ -3064,47 +3170,54 @@ function Accounts() {
               if (kind === 'telegram') toast('连接已创建，请点击连接 / 刷新验证 Token');
               else
                 setSecret(
-                  JSON.stringify(
-                    kind === 'binance' ? result.binance_bridge : result.credentials,
-                    null,
-                    2,
-                  ),
+                  JSON.stringify(kind === 'binance' ? result.binance_bridge : result.credentials, null, 2),
                 );
             }}
           >
-            <label>
-              平台类型
-              <select value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option value="telegram">Telegram Bot</option>
-                <option value="qq-local" disabled={!localQQ?.available}>
-                  QQ · VPS 扫码登录{localQQ?.available ? '（推荐）' : '（服务器未配置）'}
-                </option>
-                <option value="qq">QQ · OneBot HTTP 桥接</option>
-                <option value="binance">币安聊天 · 浏览器会话桥接（实验）</option>
-                <option value="custom">自有聊天 · 签名 HTTP 连接器</option>
-              </select>
-            </label>
+            <div className="connection-type-grid" role="group" aria-label="选择连接平台">
+              {[
+                ['telegram', 'Telegram', '官方 Bot Token'],
+                ['qq-local', 'QQ 扫码', localQQ?.available ? 'VPS 扫码登录' : '服务器未配置'],
+                ['binance', '币安聊天', '服务器登录 / 桥接'],
+                ['custom', '自有聊天', '签名 HTTP 接入'],
+              ].map(([key, label, hint]) => (
+                <button
+                  type="button"
+                  key={key}
+                  aria-pressed={kind === key}
+                  className={kind === key ? 'selected' : ''}
+                  disabled={key === 'qq-local' && !localQQ?.available}
+                  onClick={() => setKind(key!)}
+                >
+                  {key === 'telegram' ? <Send size={22} /> : <MessageSquare size={22} />}
+                  <strong>{label}</strong>
+                  <small>{hint}</small>
+                  {kind === key && <CheckCircle2 size={16} className="type-check" />}
+                </button>
+              ))}
+            </div>
+            <details className="advanced-connection">
+              <summary>已有 OneBot 服务？使用手动桥接</summary>
+              <button
+                type="button"
+                className={`btn ${kind === 'qq' ? 'primary' : ''}`}
+                aria-pressed={kind === 'qq'}
+                onClick={() => setKind('qq')}
+              >
+                QQ · OneBot HTTP 桥接
+              </button>
+            </details>
             <label>
               连接名称
               <input name="name" required maxLength={100} placeholder="例如：千羽官方机器人" />
             </label>
-            {kind === 'binance' && (
-              <div className="info-box">
-                先创建连接并在浏览器完成配对，再通过“管理同步群”自动读取已加入的聊天室，勾选要同步的群，后续可随时增删。
-              </div>
-            )}
             {import.meta.env.MODE !== 'demo' &&
               kind !== 'telegram' &&
               kind !== 'binance' &&
               kind !== 'qq-local' && (
                 <label>
                   连接器地址
-                  <input
-                    name="endpoint"
-                    type="url"
-                    required
-                    placeholder="https://chat.example.com"
-                  />
+                  <input name="endpoint" type="url" required placeholder="https://chat.example.com" />
                 </label>
               )}
             {import.meta.env.MODE !== 'demo' && kind !== 'binance' && kind !== 'qq-local' && (
@@ -3116,9 +3229,7 @@ function Accounts() {
                   required={kind === 'telegram'}
                   maxLength={2048}
                   autoComplete="off"
-                  placeholder={
-                    kind === 'telegram' ? '从 BotFather 获取' : '用于访问 OneBot HTTP 服务'
-                  }
+                  placeholder={kind === 'telegram' ? '从 BotFather 获取' : '用于访问 OneBot HTTP 服务'}
                 />
               </label>
             )}
@@ -3242,6 +3353,28 @@ function Compose({ close }: { close: () => void }) {
   const [targets, setTargets] = useState<string[]>([]);
   const [timing, setTiming] = useState('now');
   const [scheduled, setScheduled] = useState('');
+  const [step, setStep] = useState(0);
+  const [discard, setDiscard] = useState(false);
+  const formSteps = ['编辑内容', '选择社群', '确认发送'];
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  const dirty = !!(title || content || image || uploading || targets.length || scheduled);
+  const closeCompose = () => (dirty ? setDiscard(true) : close());
+  const discardPrompt = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    stepHeading.current?.focus();
+  }, [step]);
+  useEffect(() => {
+    if (discard) discardPrompt.current?.querySelector('button')?.focus();
+  }, [discard]);
+  useEffect(() => {
+    if (!dirty || submitting) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty, submitting]);
   const selectedGroups = groups.filter((g) => targets.includes(g.id) && g.sync_enabled !== false);
   const textLimit = Math.min(
     8000,
@@ -3254,9 +3387,7 @@ function Compose({ close }: { close: () => void }) {
   const scheduleTime = scheduled ? new Date(`${scheduled}+08:00`) : null;
   const invalidSchedule =
     timing === 'scheduled' &&
-    (!scheduleTime ||
-      !Number.isFinite(scheduleTime.getTime()) ||
-      scheduleTime.getTime() <= Date.now());
+    (!scheduleTime || !Number.isFinite(scheduleTime.getTime()) || scheduleTime.getTime() <= Date.now());
   const blockReason = uploading
     ? '正在上传图片…'
     : uploadError
@@ -3275,6 +3406,9 @@ function Compose({ close }: { close: () => void }) {
                   ? '请选择未来的北京时间'
                   : '';
   const blocked = !!blockReason;
+  const contentReady =
+    !!title.trim() && (!!content.trim() || !!image) && !uploading && !uploadError && !tooLong;
+  const targetsReady = !!selectedGroups.length;
   const targetSummary = ['telegram', 'qq', 'binance', 'custom']
     .map((p) => ({ name: labels[p], count: selectedGroups.filter((g) => g.platform === p).length }))
     .filter((p) => p.count);
@@ -3284,7 +3418,7 @@ function Compose({ close }: { close: () => void }) {
       wide
       title="新建群发"
       description="编辑消息、选择社群，确认预览后创建发送任务。"
-      close={close}
+      close={closeCompose}
       dismissDisabled={submitting}
     >
       <ActionForm
@@ -3294,19 +3428,23 @@ function Compose({ close }: { close: () => void }) {
             ? `创建 ${selectedGroups.length} 个定时任务`
             : `发送到 ${selectedGroups.length} 个社群`
         }
-        cancel={close}
-        disabled={blocked}
+        cancel={closeCompose}
+        disabled={blocked || step !== 2 || discard}
+        submitHidden={step !== 2}
         summary={
           <>
             <strong>{selectedGroups.length} 个目标社群</strong>
             <span>
-              {blockReason ||
-                (timing === 'scheduled' ? '北京时间定时发送' : '确认后立即加入发送队列')}
+              {blockReason || (timing === 'scheduled' ? '北京时间定时发送' : '确认后立即加入发送队列')}
             </span>
           </>
         }
         onSubmit={async (f) => {
-          const ids = f.getAll('groups').map(String).sort();
+          if (step !== 2) return;
+          const ids = selectedAvailableIds(
+            f.getAll('groups').map(String),
+            groups as { id: string; sync_enabled?: boolean }[],
+          ).sort();
           if (!ids.length) throw new Error('请至少选择一个目标社群');
           if (content.trim().length > textLimit)
             throw new Error(`当前目标平台的文字上限为 ${textLimit} 字符，请缩短内容`);
@@ -3346,9 +3484,42 @@ function Compose({ close }: { close: () => void }) {
           close();
         }}
       >
-        <div className="broadcast-compose-grid" inert={submitting}>
+        {discard && (
+          <div className="discard-prompt" role="alert" ref={discardPrompt}>
+            <div>
+              <strong>要放弃这次编辑吗？</strong>
+              <p>已填写的内容和目标选择尚未提交。</p>
+            </div>
+            <button type="button" className="btn" onClick={() => setDiscard(false)}>
+              继续编辑
+            </button>
+            <button type="button" className="btn danger" onClick={close}>
+              放弃并关闭
+            </button>
+          </div>
+        )}
+        <div className="compose-stepper" aria-label="群发步骤">
+          {formSteps.map((label, index) => (
+            <button
+              type="button"
+              key={label}
+              aria-current={step === index ? 'step' : undefined}
+              disabled={
+                submitting || (index > step && (index === 1 ? !contentReady : !contentReady || !targetsReady))
+              }
+              onClick={() => setStep(index)}
+            >
+              <span>{index < step ? <Check size={15} /> : index + 1}</span>
+              <strong>{label}</strong>
+            </button>
+          ))}
+        </div>
+        <h3 className="sr-only" tabIndex={-1} ref={stepHeading}>
+          {formSteps[step]}
+        </h3>
+        <div className="broadcast-compose-grid" inert={submitting || discard}>
           <div className="broadcast-edit">
-            <section className="compose-section">
+            <section className="compose-section" hidden={step !== 0}>
               <div className="compose-section-head">
                 <span>1</span>
                 <h3>消息内容</h3>
@@ -3375,9 +3546,7 @@ function Compose({ close }: { close: () => void }) {
                   maxLength={8000}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder={
-                    image ? '填写图片说明，也可以留空仅发送图片' : '输入将发送到群内的消息…'
-                  }
+                  placeholder={image ? '填写图片说明，也可以留空仅发送图片' : '输入将发送到群内的消息…'}
                 />
               </label>
               <div className={`compose-length ${tooLong ? 'over-limit' : ''}`}>
@@ -3472,28 +3641,38 @@ function Compose({ close }: { close: () => void }) {
                 )}
               </div>
             </section>
-            <section className="compose-section">
+            <section className="compose-section" hidden={step !== 1}>
               <div className="compose-section-head">
                 <span>2</span>
                 <h3>目标社群</h3>
                 <small>仅显示已选同步的社群</small>
               </div>
-              <GroupChoices
-                sendable
-                value={targets}
-                onChange={setTargets}
-                allowOffline={timing === 'scheduled'}
-              />
+              <GroupChoices sendable value={targets} onChange={setTargets} allowOffline />
+              {!!selectedGroups.length && (
+                <div className="selected-group-chips" aria-label="已选目标社群">
+                  {selectedGroups.map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      aria-label={`取消选择${g.name}`}
+                      onClick={() => setTargets((current) => current.filter((id) => id !== g.id))}
+                    >
+                      {g.name}
+                      <X size={13} />
+                    </button>
+                  ))}
+                </div>
+              )}
               {!!offlineTargets.length && (
                 <p className={timing === 'scheduled' ? 'info-box' : 'form-error'} role="status">
                   {offlineTargets.map((g) => g.name).join('、')}
                   {timing === 'scheduled'
                     ? '当前离线，请在计划发送时间前恢复连接；执行时会重新核对权限。'
-                    : '的连接已离线，请恢复连接或取消选择。'}
+                    : '的连接已离线。可取消选择，或在下一步改为定时发送，发送前需恢复连接。'}
                 </p>
               )}
             </section>
-            <section className="compose-section">
+            <section className="compose-section" hidden={step !== 2}>
               <div className="compose-section-head">
                 <span>3</span>
                 <h3>发送时间</h3>
@@ -3534,7 +3713,72 @@ function Compose({ close }: { close: () => void }) {
                   <small>请选择未来的时间；各群会生成独立的定时任务。</small>
                 </label>
               )}
+              <div className="broadcast-review">
+                <h3>核对本次发送</h3>
+                <p>
+                  任务：<strong>{title}</strong>
+                </p>
+                <p>
+                  向 <strong>{selectedGroups.length}</strong> 个社群发送
+                  {image ? (content.trim() ? '图文消息' : '图片') : '文字消息'}，
+                  {timing === 'now'
+                    ? '提交后立即进入发送队列。'
+                    : scheduled
+                      ? `计划于 ${scheduled.replace('T', ' ')}（北京时间）发送。`
+                      : '选择发送时间后，将分别创建定时任务。'}
+                </p>
+                {!!offlineTargets.length && (
+                  <p className="text-warning" role="status">
+                    {offlineTargets.length} 个目标社群当前离线。
+                    {timing === 'scheduled'
+                      ? '请在计划时间前恢复连接；执行时会重新核对权限。'
+                      : '请返回取消选择或恢复连接后再发送。'}
+                  </p>
+                )}
+                <div className="review-targets">
+                  {selectedGroups.map((g) => (
+                    <span key={g.id}>
+                      <Platform value={g.platform} />
+                      {g.name}
+                      {!groupAccountOnline(g, accounts) && <small className="text-warning">当前离线</small>}
+                    </span>
+                  ))}
+                </div>
+                <button type="button" className="text-button" onClick={() => setStep(1)}>
+                  修改目标社群
+                </button>
+              </div>
             </section>
+            <div className="compose-step-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={step === 0 || submitting}
+                onClick={() => setStep((current) => current - 1)}
+              >
+                上一步
+              </button>
+              {step < 2 && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  disabled={step === 0 ? !contentReady : !targetsReady}
+                  onClick={() => setStep((current) => current + 1)}
+                >
+                  下一步：{formSteps[step + 1]}
+                  <ArrowRight size={16} />
+                </button>
+              )}
+              <small>
+                {step === 0 && !contentReady
+                  ? '填写任务标题和消息内容后继续'
+                  : step === 1 && !targetsReady
+                    ? '请至少选择一个目标社群'
+                    : step === 2
+                      ? '确认内容与目标后，点击下方发送按钮'
+                      : '编辑内容会保留，可随时返回修改'}
+              </small>
+            </div>
           </div>
           <aside className="broadcast-preview" aria-label="群发内容预览">
             <div className="broadcast-preview-head">
@@ -3550,9 +3794,7 @@ function Compose({ close }: { close: () => void }) {
               </span>
               <div className="preview-message">
                 <strong>机器人</strong>
-                <div
-                  className={`preview-bubble ${!content.trim() && !image ? 'is-placeholder' : ''}`}
-                >
+                <div className={`preview-bubble ${!content.trim() && !image ? 'is-placeholder' : ''}`}>
                   {content.trim() ? <p>{content}</p> : !image && <p>消息内容会显示在这里</p>}
                   {image && (
                     <img
@@ -3591,9 +3833,7 @@ function Compose({ close }: { close: () => void }) {
               ) : (
                 <p>先选择目标社群，再创建发送任务。</p>
               )}
-              <small>
-                创建任务后，成功、失败和待核对会分别记录。未确认结果的消息不会自动重复发送。
-              </small>
+              <small>创建任务后，成功、失败和待核对会分别记录。未确认结果的消息不会自动重复发送。</small>
             </div>
           </aside>
         </div>
@@ -3674,16 +3914,10 @@ function Announcements() {
       </Head>
       <div className="card">
         <div className="tabs padded">
-          <button
-            className={tab === 'announcements' ? 'active' : ''}
-            onClick={() => setTab('announcements')}
-          >
+          <button className={tab === 'announcements' ? 'active' : ''} onClick={() => setTab('announcements')}>
             发布记录
           </button>
-          <button
-            className={tab === 'deliveries' ? 'active' : ''}
-            onClick={() => setTab('deliveries')}
-          >
+          <button className={tab === 'deliveries' ? 'active' : ''} onClick={() => setTab('deliveries')}>
             全部投递任务
           </button>
         </div>
@@ -3742,9 +3976,7 @@ function Announcements() {
                       <div>
                         <h3>{a.title}</h3>
                         <time>
-                          {new Date(a.scheduled_at).getTime() > Date.now()
-                            ? '计划发送'
-                            : '发送时间'}{' '}
+                          {new Date(a.scheduled_at).getTime() > Date.now() ? '计划发送' : '发送时间'}{' '}
                           {date(a.scheduled_at)}
                         </time>
                       </div>
@@ -3757,17 +3989,13 @@ function Announcements() {
                       )}
                       {a.image_asset_id && (
                         <a
-                          href={mediaUrl(
-                            `/api/v1/uploads/images/${encodeURIComponent(a.image_asset_id)}`,
-                          )}
+                          href={mediaUrl(`/api/v1/uploads/images/${encodeURIComponent(a.image_asset_id)}`)}
                           target="_blank"
                           rel="noreferrer"
                           className="broadcast-record-image"
                         >
                           <img
-                            src={mediaUrl(
-                              `/api/v1/uploads/images/${encodeURIComponent(a.image_asset_id)}`,
-                            )}
+                            src={mediaUrl(`/api/v1/uploads/images/${encodeURIComponent(a.image_asset_id)}`)}
                             alt="群发图片"
                             loading="lazy"
                           />
@@ -3827,9 +4055,7 @@ function Announcements() {
                         </td>
                         <td>
                           <Badge value={d.status} />
-                          {d.last_error && (
-                            <small className="block error-text">{d.last_error}</small>
-                          )}
+                          {d.last_error && <small className="block error-text">{d.last_error}</small>}
                         </td>
                         <td>{date(d.created_at)}</td>
                         <td>
@@ -3840,9 +4066,7 @@ function Announcements() {
                             d.receipt?.error?.retryable &&
                             !d.review_ref?.purpose?.startsWith('qq-verification-') &&
                             new Date(d.expires_at).getTime() > Date.now() &&
-                            groups.some(
-                              (g) => g.id === d.conversation_id && g.sync_enabled !== false,
-                            ) && (
+                            groups.some((g) => g.id === d.conversation_id && g.sync_enabled !== false) && (
                               <button
                                 className="text-button"
                                 disabled={!!busy}
@@ -3851,15 +4075,14 @@ function Announcements() {
                                 重试
                               </button>
                             )}
-                          {d.status === 'failed' &&
-                            d.review_ref?.purpose?.startsWith('qq-verification-') && (
-                              <Link
-                                className="text-link"
-                                to={`/groups/${d.conversation_id}?verification=${encodeURIComponent(d.review_ref.verification_id)}`}
-                              >
-                                前往验证处理
-                              </Link>
-                            )}
+                          {d.status === 'failed' && d.review_ref?.purpose?.startsWith('qq-verification-') && (
+                            <Link
+                              className="text-link"
+                              to={`/groups/${d.conversation_id}?verification=${encodeURIComponent(d.review_ref.verification_id)}`}
+                            >
+                              前往验证处理
+                            </Link>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -3964,8 +4187,7 @@ function DeliveryDetail({ id, close }: { id: string; close: () => void }) {
             </div>
             {data.receipt?.result?.member && (
               <div className="info-box">
-                成员 {data.receipt.result.member.user_id} · 群 {data.receipt.result.member.group_id}
-                ：
+                成员 {data.receipt.result.member.user_id} · 群 {data.receipt.result.member.group_id}：
                 {
                   (
                     {
@@ -4001,9 +4223,7 @@ function DeliveryDetail({ id, close }: { id: string; close: () => void }) {
                       className="broadcast-record-image"
                     >
                       <img
-                        src={mediaUrl(
-                          `/api/v1/uploads/images/${encodeURIComponent(part.asset_id)}`,
-                        )}
+                        src={mediaUrl(`/api/v1/uploads/images/${encodeURIComponent(part.asset_id)}`)}
                         alt="本次投递图片"
                       />
                     </a>
@@ -4114,24 +4334,17 @@ function Moderation() {
       <div className="info-box spaced">
         <ShieldCheck size={18} />
         <span>
-          规则按群独立生效。当前 {groups.filter((g) => g.policy.mode === 'enforce').length}{' '}
-          个群开启自动处理，
+          规则按群独立生效。当前 {groups.filter((g) => g.policy.mode === 'enforce').length} 个群开启自动处理，
           {groups.filter((g) => g.policy.verification_enabled).length} 个群开启活人验证。
           <Link to="/groups"> 前往设置 →</Link>
         </span>
       </div>
       <div className="card">
         <div className="tabs padded">
-          <button
-            className={tab === 'verifications' ? 'active' : ''}
-            onClick={() => setTab('verifications')}
-          >
+          <button className={tab === 'verifications' ? 'active' : ''} onClick={() => setTab('verifications')}>
             成员验证
           </button>
-          <button
-            className={tab === 'blacklists' ? 'active' : ''}
-            onClick={() => setTab('blacklists')}
-          >
+          <button className={tab === 'blacklists' ? 'active' : ''} onClick={() => setTab('blacklists')}>
             群黑名单
           </button>
         </div>
@@ -4239,9 +4452,7 @@ function Integrations() {
                     <tr key={p.id}>
                       <td>
                         <strong>{p.name}</strong>
-                        <small className="block muted">
-                          授权 {p.conversation_ids.length} 个社群
-                        </small>
+                        <small className="block muted">授权 {p.conversation_ids.length} 个社群</small>
                       </td>
                       <td>
                         <code>{p.prefix}…</code>
@@ -4301,9 +4512,7 @@ function Integrations() {
                 </span>
                 <ArrowRight size={20} />
                 <span>{r.target_name}</span>
-                <Badge value={r.enabled ? 'online' : 'paused'}>
-                  {r.enabled ? '已启用' : '已停用'}
-                </Badge>
+                <Badge value={r.enabled ? 'online' : 'paused'}>{r.enabled ? '已启用' : '已停用'}</Badge>
                 <button
                   className="icon-btn danger"
                   aria-label="删除同步路线"
@@ -4411,9 +4620,7 @@ function Integrations() {
               目标社群
               <GroupSelect name="target" />
             </label>
-            <div className="info-box">
-              启用后开始同步新消息。请确认目标群允许显示来源群名称与成员 ID。
-            </div>
+            <div className="info-box">启用后开始同步新消息。请确认目标群允许显示来源群名称与成员 ID。</div>
           </ActionForm>
         </Modal>
       )}
@@ -4666,11 +4873,7 @@ function Audit() {
               </table>
             </div>
           ) : (
-            <Empty
-              icon={Activity}
-              title="还没有操作记录"
-              text="开始管理社群后，重要操作将记录在这里。"
-            />
+            <Empty icon={Activity} title="还没有操作记录" text="开始管理社群后，重要操作将记录在这里。" />
           )}
         </Loading>
       </div>
