@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowLeft,
@@ -10,7 +10,9 @@ import {
   ChevronUp,
   CircleAlert,
   Clock3,
-  Info,
+  MessageSquareQuote,
+  PanelRightClose,
+  PanelRightOpen,
   LoaderCircle,
   MessageSquare,
   Radio,
@@ -18,7 +20,6 @@ import {
   Reply,
   Search,
   Send,
-  Settings2,
   ShieldCheck,
   Users,
   Wifi,
@@ -30,6 +31,9 @@ import ModerationResult from './ModerationResult';
 import InboxDeliveryHistory from './InboxDeliveryHistory';
 import { ImageViewer } from './ConsoleTools';
 import { filterChatScope } from './workbench';
+import GroupPanel, { panelTab } from './pages/group/GroupPanel';
+import type { PanelTab } from './pages/group/GroupPanel';
+import './pages/workspace.css';
 import {
   readInboxDrafts,
   saveInboxDrafts,
@@ -367,12 +371,39 @@ export default function Inbox({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [scope, setScope] = useState('all');
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const urlPanel = panelTab(params.get('panel'));
+  const [panel, setPanelState] = useState<PanelTab | null>(() => {
+    if (urlPanel) return urlPanel;
+    try {
+      if (localStorage.getItem('superbot:group-panel') === 'closed') return null;
+    } catch {
+      /* Optional preference. */
+    }
+    return window.matchMedia('(min-width: 1280px)').matches ? 'overview' : null;
+  });
+  useEffect(() => {
+    if (urlPanel) setPanelState(urlPanel);
+  }, [urlPanel, id]);
+  const setPanel = (next: PanelTab | null) => {
+    setPanelState(next);
+    try {
+      localStorage.setItem('superbot:group-panel', next ? 'open' : 'closed');
+    } catch {
+      /* Optional preference. */
+    }
+    if (params.has('panel') || params.has('member')) {
+      const updated = new URLSearchParams(params);
+      updated.delete('panel');
+      if (next !== 'members') updated.delete('member');
+      setParams(updated, { replace: true });
+    }
+  };
+  const detailsOpen = !!panel;
   const [compactDetails, setCompactDetails] = useState(
-    () => window.matchMedia('(max-width: 1100px)').matches,
+    () => window.matchMedia('(max-width: 1279px)').matches,
   );
-  const detailButton = useRef<HTMLButtonElement>(null);
-  const details = useRef<HTMLElement>(null);
+  const panelButton = useRef<HTMLButtonElement>(null);
   const [showGroups, setShowGroups] = useState(false);
   const draftKey = `superbot:inbox-drafts:${draftScope}`;
   const sendKey = `superbot:inbox-sends:${draftScope}`;
@@ -381,6 +412,17 @@ export default function Inbox({
   const [drafts, setDrafts] = useState<Record<string, string>>(() => readInboxDrafts(draftKey));
   const [draftPersisted, setDraftPersisted] = useState(true);
   const [findOpen, setFindOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickReplies, setQuickReplies] = useState<Data[] | null>(null);
+  useEffect(() => {
+    if (!quickOpen || quickReplies) return;
+    api<Data[]>('/templates?kind=reply')
+      .then(setQuickReplies)
+      .catch((err) => {
+        setQuickReplies([]);
+        toast(err.message, true);
+      });
+  }, [quickOpen]);
   const [findQuery, setFindQuery] = useState('');
   const [matchIndex, setMatchIndex] = useState(0);
   const findInput = useRef<HTMLInputElement>(null);
@@ -507,29 +549,7 @@ export default function Inbox({
     if (findOpen) findInput.current?.focus();
   }, [findOpen]);
   useEffect(() => {
-    if (!detailsOpen) return;
-    details.current?.focus();
-    const trap = (event: KeyboardEvent) => {
-      if (!compactDetails || event.key !== 'Tab') return;
-      const entries = Array.from(details.current?.querySelectorAll<HTMLElement>('a[href], button') ?? []);
-      const first = entries[0],
-        last = entries.at(-1);
-      if (
-        event.shiftKey &&
-        (document.activeElement === first || document.activeElement === details.current)
-      ) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    document.addEventListener('keydown', trap);
-    return () => document.removeEventListener('keydown', trap);
-  }, [detailsOpen, compactDetails]);
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 1100px)');
+    const media = window.matchMedia('(max-width: 1279px)');
     const update = () => setCompactDetails(media.matches);
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
@@ -562,7 +582,6 @@ export default function Inbox({
     lastMessage.current = '';
     setNewMessages(0);
     setShowGroups(false);
-    setDetailsOpen(false);
     setFindOpen(false);
     setFindQuery('');
     setMatchIndex(0);
@@ -751,34 +770,8 @@ export default function Inbox({
   );
   return (
     <>
-      <div className="page-head inbox-page-head">
-        <div>
-          <div className="eyebrow">LIVE COMMUNITY INBOX</div>
-          <h1>实时消息</h1>
-          <p>在一个工作台里跟进社群讨论，直接发送与回复。</p>
-        </div>
-        <div className="inbox-head-actions">
-          <Link className="btn" to="/announcements?compose=1">
-            <Send size={15} />
-            群发消息
-          </Link>
-          <div className={`live-state ${status}`}>
-            <span />
-            {status === 'live' ? (
-              <Wifi size={14} />
-            ) : status === 'connecting' ? (
-              <LoaderCircle className="spin" size={14} />
-            ) : (
-              <WifiOff size={14} />
-            )}
-            <strong>
-              {status === 'live' ? '消息实时更新' : status === 'connecting' ? '正在连接' : '正在重连'}
-            </strong>
-          </div>
-        </div>
-      </div>
       <div
-        className={`inbox-shell ${showGroups ? 'show-group-list' : ''} ${detailsOpen ? 'details-open' : ''}`}
+        className={`inbox-shell ${showGroups ? 'show-group-list' : ''} ${detailsOpen ? 'details-open' : ''} ${compactDetails ? 'compact-panel' : ''}`}
       >
         <aside
           className="inbox-groups"
@@ -790,8 +783,16 @@ export default function Inbox({
         >
           <div className="inbox-list-head">
             <h2>
-              我的社群 <span>{groups.length}</span>
+              社群 <span>{groups.length}</span>
             </h2>
+            <Link
+              className="icon-btn sm"
+              to="/announcements?compose=1"
+              title="群发消息"
+              aria-label="群发消息"
+            >
+              <Send size={15} />
+            </Link>
             <button
               className="icon-btn inbox-group-close"
               aria-label="关闭社群列表"
@@ -979,6 +980,16 @@ export default function Inbox({
                   </p>
                 </div>
                 <div className="inbox-room-actions">
+                  <span className={`live-state ${status}`} title="消息连接状态">
+                    {status === 'live' ? (
+                      <Wifi size={13} />
+                    ) : status === 'connecting' ? (
+                      <LoaderCircle className="spin" size={13} />
+                    ) : (
+                      <WifiOff size={13} />
+                    )}
+                    {status === 'live' ? '实时' : status === 'connecting' ? '连接中' : '重连中'}
+                  </span>
                   <button
                     ref={findButton}
                     className={`icon-btn ${findOpen ? 'active' : ''}`}
@@ -987,36 +998,28 @@ export default function Inbox({
                     aria-pressed={findOpen}
                     onClick={() => setFindOpen((value) => !value)}
                   >
-                    <Search size={18} />
-                  </button>
-                  <Link
-                    className="btn inbox-room-details"
-                    to={`/groups/${id}?tab=policy`}
-                    aria-label="管理当前社群"
-                  >
-                    <Settings2 size={16} />
-                    管理社群
-                  </Link>
-                  <button
-                    ref={detailButton}
-                    className={`icon-btn ${detailsOpen ? 'active' : ''}`}
-                    aria-label="查看社群资料和快捷操作"
-                    aria-expanded={detailsOpen}
-                    aria-controls="chat-room-details"
-                    onClick={() => setDetailsOpen((value) => !value)}
-                    title="社群资料与快捷操作"
-                  >
-                    <Info size={19} />
+                    <Search size={17} />
                   </button>
                   <button
                     className="icon-btn"
                     aria-label="刷新当前聊天"
+                    title="刷新"
                     onClick={() => {
                       if (status === 'live') void refresh();
                       else reconnect();
                     }}
                   >
                     <RefreshCw size={16} />
+                  </button>
+                  <button
+                    ref={panelButton}
+                    className={`btn sm ${detailsOpen ? 'soft' : ''}`}
+                    aria-expanded={detailsOpen}
+                    aria-controls="group-panel"
+                    onClick={() => setPanel(detailsOpen ? null : 'overview')}
+                  >
+                    {detailsOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+                    群面板
                   </button>
                 </div>
               </header>
@@ -1082,7 +1085,7 @@ export default function Inbox({
                 <div className="inbox-demo-note">
                   <Bot size={14} />
                   <span>演示群 · 消息与回复只在本地模拟</span>
-                  <Link to={`/groups/${id}`}>
+                  <Link to={`/inbox/${id}?panel=overview`}>
                     模拟成员发言 <ChevronRight size={12} />
                   </Link>
                 </div>
@@ -1235,7 +1238,7 @@ export default function Inbox({
                                 <p>{message.content}</p>
                               )}
                               {message.content_truncated && (
-                                <Link to={`/groups/${id}`}>内容较长，前往消息记录查看</Link>
+                                <Link to={`/inbox/${id}?panel=records`}>内容较长，在记录中查看</Link>
                               )}
                             </div>
                             <div className="chat-message-foot">
@@ -1262,7 +1265,7 @@ export default function Inbox({
                                 /^[1-9]\d*$/.test(message.sender_id) && (
                                   <Link
                                     className="chat-reply"
-                                    to={`/groups/${id}?member=${encodeURIComponent(message.sender_id)}`}
+                                    to={`/inbox/${id}?panel=members&member=${encodeURIComponent(message.sender_id)}`}
                                     aria-label={`管理成员${message.sender_name}`}
                                   >
                                     <ShieldCheck size={13} />
@@ -1435,6 +1438,57 @@ export default function Inbox({
                 />
                 <div className="composer-toolbar">
                   <span>
+                    <span className="menu-anchor">
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        aria-expanded={quickOpen}
+                        disabled={!room?.can_send || !!opening}
+                        onClick={() => setQuickOpen((value) => !value)}
+                      >
+                        <MessageSquareQuote size={13} />
+                        常用语
+                      </button>
+                      {quickOpen && (
+                        <div
+                          className="menu menu-up"
+                          role="menu"
+                          onKeyDown={(e) => e.key === 'Escape' && setQuickOpen(false)}
+                        >
+                          {!quickReplies ? (
+                            <div className="menu-empty">
+                              <LoaderCircle className="spin" size={14} /> 正在读取
+                            </div>
+                          ) : quickReplies.length ? (
+                            quickReplies.map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  if (!id || locks.current.has(id)) return;
+                                  forgetAttempt(id);
+                                  setDrafts((v) => ({
+                                    ...v,
+                                    [id]: (v[id]?.trim() ? `${v[id]}\n` : '') + t.content,
+                                  }));
+                                  setQuickOpen(false);
+                                  textarea.current?.focus();
+                                }}
+                              >
+                                <strong>{t.title}</strong>
+                                <small>{t.content}</small>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="menu-empty">
+                              还没有常用语。
+                              <Link to="/announcements?tab=templates">去添加</Link>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </span>
                     <span className="composer-identity">
                       <Bot size={13} />
                       {room?.account_name ?? '连接账号'}
@@ -1471,109 +1525,32 @@ export default function Inbox({
             </>
           )}
         </section>
-        {detailsOpen && room && (
+        {detailsOpen && id && (
           <aside
-            id="chat-room-details"
+            id="group-panel"
             className="inbox-details-panel"
             role={compactDetails ? 'dialog' : undefined}
             aria-modal={compactDetails || undefined}
-            aria-label="社群资料和快捷操作"
-            ref={details}
-            tabIndex={-1}
+            aria-label="群面板"
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setDetailsOpen(false);
-                requestAnimationFrame(() => detailButton.current?.focus());
+              if (event.key === 'Escape' && compactDetails) {
+                setPanel(null);
+                requestAnimationFrame(() => panelButton.current?.focus());
               }
             }}
           >
-            <header>
-              <h3>社群资料</h3>
-              <button
-                className="icon-btn"
-                aria-label="关闭社群资料"
-                onClick={() => {
-                  setDetailsOpen(false);
-                  requestAnimationFrame(() => detailButton.current?.focus());
-                }}
-              >
-                <X size={18} />
-              </button>
-            </header>
-            <span className={`inbox-group-avatar ${room.platform}`}>
-              <Users size={24} />
-            </span>
-            <h2>{room.name}</h2>
-            <p>
-              {platformName(room)} · {room.kind === 'channel' ? '频道' : '群聊'}
-            </p>
-            <dl>
-              <div>
-                <dt>成员人数</dt>
-                <dd>{room.member_count ?? '未知'}</dd>
-              </div>
-              <div>
-                <dt>连接账号</dt>
-                <dd>{room.account_name ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>社群 ID</dt>
-                <dd>{room.external_id ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>发送状态</dt>
-                <dd className={room.can_send ? 'text-success' : 'text-warning'}>
-                  {room.can_send ? '可以发送' : '暂不可发送'}
-                </dd>
-              </div>
-            </dl>
-            <h4>快捷操作</h4>
-            {[
-              [`/groups/${id}?tab=policy`, '管理规则', ShieldCheck],
-              [`/groups/${id}?tab=keywords`, '关键词回复', MessageSquare],
-              [`/groups/${id}?tab=permissions`, '平台权限', Settings2],
-            ].map(([href, label, Icon]) => {
-              const EntryIcon = Icon as typeof ShieldCheck;
-              return (
-                <Link key={String(href)} to={String(href)} className="room-quick-link">
-                  <EntryIcon size={17} />
-                  <span>{String(label)}</span>
-                  <ChevronRight size={14} />
-                </Link>
-              );
-            })}
-            {['telegram', 'qq', 'binance'].includes(room.platform) && (
-              <Link
-                className="room-quick-link"
-                to={`/accounts?groups=${encodeURIComponent(room.account_id ?? room.executor_account_id ?? '')}`}
-              >
-                <Radio size={17} />
-                <span>选择同步社群</span>
-                <ChevronRight size={14} />
-              </Link>
-            )}
-            {['telegram', 'binance'].includes(room.platform) && room.kind === 'group' && (
-              <Link className="room-quick-link" to={`/groups/${id}?tab=members`}>
-                <Users size={17} />
-                <span>成员管理</span>
-                <ChevronRight size={14} />
-              </Link>
-            )}
-            {room.platform === 'qq' && room.kind === 'group' && (
-              <Link className="room-quick-link" to={`/groups/${id}?tab=qq-verifications`}>
-                <Users size={17} />
-                <span>活人验证</span>
-                <ChevronRight size={14} />
-              </Link>
-            )}
-            {room.platform === 'qq' && room.kind === 'group' && (
-              <Link className="room-quick-link" to={`/groups/${id}?tab=qq-requests`}>
-                <ShieldCheck size={17} />
-                <span>入群审核</span>
-                <ChevronRight size={14} />
-              </Link>
-            )}
-            <small>操作前会重新核对平台权限，执行结果在对应页面显示。</small>
+            <GroupPanel
+              key={id}
+              id={id}
+              tab={panel ?? 'overview'}
+              setTab={setPanel}
+              member={params.get('member')}
+              variant="panel"
+              onClose={() => {
+                setPanel(null);
+                requestAnimationFrame(() => panelButton.current?.focus());
+              }}
+            />
           </aside>
         )}
       </div>

@@ -228,6 +228,11 @@ class ApiController {
           principal.name,
         );
     }
+    const directory = path.match(/^\/conversations\/([^/]+)\/members(?:\/([^/]+))?$/);
+    if (method === 'GET' && directory)
+      return directory[2]
+        ? s.directory.detail(directory[1]!, decodeURIComponent(directory[2]))
+        : s.directory.list(directory[1]!, req.query);
     const qqRequests = path.match(/^\/conversations\/([^/]+)\/qq-requests$/);
     if (qqRequests) {
       if (method === 'GET') return s.qqRequests.overview(qqRequests[1]!);
@@ -391,6 +396,14 @@ class ApiController {
         principal.name,
         req.headers['idempotency-key'] ? String(req.headers['idempotency-key']) : undefined,
       );
+    const announcement = path.match(/^\/announcements\/([^/]+)$/);
+    if (method === 'PUT' && announcement)
+      return s.features.updateAnnouncement(announcement[1]!, body, principal.name);
+    if (method === 'GET' && path === '/templates') return s.templates.list(req.query.kind);
+    if (method === 'POST' && path === '/templates') return s.templates.create(body, principal.name);
+    const template = path.match(/^\/templates\/([^/]+)$/);
+    if (method === 'PUT' && template) return s.templates.update(template[1]!, body, principal.name);
+    if (method === 'DELETE' && template) return s.templates.remove(template[1]!, principal.name);
     const cancel = path.match(/^\/announcements\/([^/]+)\/cancel$/);
     if (method === 'POST' && cancel) return s.features.cancelAnnouncement(cancel[1]!, principal.name);
     if (method === 'GET' && path === '/deliveries') return s.features.deliveries();

@@ -4,7 +4,7 @@
 }
 .qq-login-state {
   padding: 14px;
-  background: #f0f5ee;
+  background: var(--accent-soft);
   border-radius: 8px;
 }
 .qq-login-state p {
@@ -13,7 +13,7 @@
 .qq-login-state small {
   display: block;
   margin-top: 8px;
-  color: var(--muted);
+  color: var(--text-3);
 }
 .qq-login-qr {
   text-align: center;
@@ -21,12 +21,12 @@
 .qq-login-qr svg {
   width: min(220px, 100%);
   height: auto;
-  background: #fff;
-  border: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
 }
 .qq-login-qr p {
-  color: var(--muted);
+  color: var(--text-3);
   font-size: 13px;
 }
 .qq-login-actions {

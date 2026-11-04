@@ -3,19 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import Landing from './Landing';
 
-import './styles.css';
-import './inbox.css';
+import './site-base.css';
 import './landing.css';
-import './console.css';
 
 const App = React.lazy(() => import('./App'));
-const DemoTools =
-  import.meta.env.MODE === 'demo' ? React.lazy(() => import('./demo/DemoTools')) : null;
+const DemoTools = import.meta.env.MODE === 'demo' ? React.lazy(() => import('./demo/DemoTools')) : null;
 
-class WorkspaceLoadBoundary extends React.Component<
-  { children: React.ReactNode },
-  { failed: boolean }
-> {
+class WorkspaceLoadBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };

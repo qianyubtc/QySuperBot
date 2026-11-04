@@ -1,0 +1,177 @@
+/* Base element styles for the public landing page and the console's loading fallback.
+   Scoped with :where() so specificity matches the original global rules. */
+:root:not([data-console-theme]) {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  color: #263c35;
+  background: #f6f8f6;
+  font-synthesis: none;
+  font-size: 14px;
+  --ink: #203a30;
+  --muted: #85918a;
+  --green: #277953;
+  --line: #e5eae6;
+  --surface: #fff;
+  --rail: #172c25;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+:where(.landing, .workspace-entry-state) a {
+  color: inherit;
+  text-decoration: none;
+}
+:where(.landing, .workspace-entry-state) button,
+:where(.landing, .workspace-entry-state) input,
+:where(.landing, .workspace-entry-state) select,
+:where(.landing, .workspace-entry-state) textarea {
+  font: inherit;
+}
+:where(.landing, .workspace-entry-state) button,
+:where(.landing, .workspace-entry-state) a,
+:where(.landing, .workspace-entry-state) input,
+:where(.landing, .workspace-entry-state) select,
+:where(.landing, .workspace-entry-state) textarea {
+  outline-offset: 4px;
+}
+:where(.landing, .workspace-entry-state) button {
+  cursor: pointer;
+}
+:where(.landing, .workspace-entry-state) button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+:where(.landing, .workspace-entry-state) input,
+:where(.landing, .workspace-entry-state) textarea,
+:where(.landing, .workspace-entry-state) select {
+  width: 100%;
+  border: 1px solid #dce3dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #293d34;
+  padding: 11px 12px;
+  transition:
+    border 0.15s,
+    box-shadow 0.15s;
+}
+:where(.landing, .workspace-entry-state) input:focus,
+:where(.landing, .workspace-entry-state) select:focus,
+:where(.landing, .workspace-entry-state) textarea:focus {
+  outline: none;
+  border-color: #78aa8d;
+  box-shadow: 0 0 0 3px #4f9a7020;
+}
+:where(.landing, .workspace-entry-state) input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+  padding: 0;
+}
+:where(.landing, .workspace-entry-state) textarea {
+  resize: vertical;
+  line-height: 1.7;
+}
+:where(.landing, .workspace-entry-state) label {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.5;
+  margin: 18px 0 8px;
+}
+:where(.landing, .workspace-entry-state) label input,
+:where(.landing, .workspace-entry-state) label select,
+:where(.landing, .workspace-entry-state) label textarea {
+  display: block;
+  margin-top: 8px;
+  font-weight: 400;
+}
+:where(.landing, .workspace-entry-state) label small {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+  display: block;
+  margin-top: 6px;
+}
+:where(.landing, .workspace-entry-state) h1,
+:where(.landing, .workspace-entry-state) h2,
+:where(.landing, .workspace-entry-state) h3,
+:where(.landing, .workspace-entry-state) p {
+  margin: 0;
+}
+:where(.landing, .workspace-entry-state) h1 {
+  font-size: 29px;
+  letter-spacing: -0.7px;
+  line-height: 1.5;
+  font-weight: 650;
+}
+:where(.landing, .workspace-entry-state) h2 {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+}
+:where(.landing, .workspace-entry-state) h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+:where(.landing, .workspace-entry-state) p {
+  line-height: 1.7;
+}
+:where(.landing, .workspace-entry-state) small {
+  font-size: 12px;
+}
+:where(.landing, .workspace-entry-state) code,
+:where(.landing, .workspace-entry-state) pre {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+}
+:where(.landing, .workspace-entry-state) pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f5f7f5;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 15px;
+  line-height: 1.8;
+  max-width: 100%;
+  overflow: auto;
+}
+:where(.landing, .workspace-entry-state) strong {
+  font-weight: 600;
+}
+:where(.workspace-entry-state) .btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid #cfd8d3;
+  border-radius: 8px;
+  background: #fff;
+  color: #203a30;
+  font-weight: 600;
+}
+:where(.workspace-entry-state) .btn.primary {
+  border-color: #277953;
+  background: #277953;
+  color: #fff;
+}
+:root[data-console-theme='dark'] .workspace-entry-state {
+  background: #0a0d0c;
+  color: #e7ece9;
+}
+.landing .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

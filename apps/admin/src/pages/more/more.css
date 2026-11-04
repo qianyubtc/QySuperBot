@@ -1,0 +1,123 @@
+.lottery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.lottery-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+.lottery-card header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.lottery-card header > div {
+  min-width: 0;
+  flex: 1;
+}
+.lottery-card h2 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.lottery-card header p {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.lottery-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--violet-soft);
+  color: var(--violet-text);
+  flex: none;
+}
+.stat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stat-row .stat {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.lottery-deadline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.lottery-join {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  font-size: var(--fs-xs);
+}
+.lottery-join code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lottery-winners {
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--accent-softer);
+  font-size: var(--fs-sm);
+}
+.lottery-winners strong {
+  color: var(--accent-text);
+  font-size: var(--fs-xs);
+}
+.audit-list {
+  display: grid;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+.audit-list li > pre {
+  margin: 0 8px 8px 30px;
+}
+.audit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  text-align: left;
+}
+.audit-row:hover {
+  background: var(--hover);
+}
+.audit-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.audit-main strong {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.audit-main small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.audit-main code {
+  font-size: 11px;
+}
+.audit-row time {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}

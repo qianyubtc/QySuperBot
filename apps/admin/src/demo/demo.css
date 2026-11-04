@@ -7,15 +7,15 @@ body:has(.sandbox-tools) {
   left: 0;
   right: 0;
   z-index: 120;
-  background: #f1f7e9;
-  border-top: 1px solid #bdccad;
-  box-shadow: 0 -6px 30px #1b382315;
+  background: var(--accent-soft);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 24px;
-  color: #34513c;
+  color: var(--text);
   font-size: 12px;
 }
 .sandbox-tools > div:first-child {
@@ -26,7 +26,7 @@ body:has(.sandbox-tools) {
   font-size: 13px;
 }
 .sandbox-tools small {
-  color: #925618;
+  color: var(--warning-text);
 }
 .sandbox-actions {
   display: flex;
@@ -35,9 +35,9 @@ body:has(.sandbox-tools) {
 }
 .sandbox-tools button,
 .sandbox-tools a {
-  border: 1px solid #b7c9ac;
+  border: 1px solid var(--border);
   background: white;
-  color: #34513c;
+  color: var(--text);
   padding: 8px 12px;
   border-radius: 7px;
   cursor: pointer;
@@ -46,7 +46,7 @@ body:has(.sandbox-tools) {
 }
 .sandbox-tools button:hover,
 .sandbox-tools a:hover {
-  background: #e2edd8;
+  background: var(--accent-soft);
 }
 .sandbox-reset {
   position: absolute;
@@ -55,9 +55,9 @@ body:has(.sandbox-tools) {
   max-width: 420px;
   padding: 18px;
   background: white;
-  border: 1px solid #bdccad;
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 8px 30px #19312022;
+  box-shadow: var(--shadow-sm);
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -72,8 +72,8 @@ body:has(.sandbox-tools) .is-inbox .main-shell {
   padding: 24px;
   display: grid;
   gap: 16px;
-  background: #f6f9f2;
-  border: 1px dashed #9bb28c;
+  background: var(--accent-softer);
+  border: 1px dashed var(--border);
   border-radius: 14px;
 }
 .demo-login .demo-login-symbol {
@@ -81,12 +81,12 @@ body:has(.sandbox-tools) .is-inbox .main-shell {
   height: 100px;
   display: grid;
   place-items: center;
-  background: #e1ecd4;
+  background: var(--accent-soft);
   border-radius: 20px;
   font-size: 42px;
 }
 .demo-login small {
-  color: #61735c;
+  color: var(--text-2);
 }
 @media (max-width: 760px) {
   body:has(.sandbox-tools) {

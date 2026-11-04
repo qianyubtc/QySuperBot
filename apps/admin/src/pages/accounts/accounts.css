@@ -1,0 +1,371 @@
+.connection-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.connection-overview > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.connection-overview h2 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.connection-overview p {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.connection-overview-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.account-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.account-toolbar .search {
+  width: 280px;
+}
+.account-toolbar .search .icon-btn {
+  position: absolute;
+  right: 2px;
+  width: 28px;
+  height: 28px;
+}
+.account-refresh-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.account-refresh-state.has-error {
+  color: var(--warning-text);
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+.account-card.account-needs-attention {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+.account-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.account-title {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.account-title h2 {
+  overflow: hidden;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-title small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.account-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.account-card dl > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.account-card dt {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.account-card dd {
+  overflow: hidden;
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-state-note {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+}
+.account-state-note > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+.account-state-note.needs-check {
+  background: var(--warning-soft);
+}
+.account-state-note.needs-check > svg {
+  color: var(--warning-text);
+}
+.account-state-note strong {
+  display: block;
+  font-weight: 500;
+}
+.account-state-note p {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.account-state-note.needs-check p {
+  color: var(--warning-text);
+}
+.account-demo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--accent-softer);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+.account-more {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.account-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  list-style: none;
+}
+.account-more > summary::-webkit-details-marker {
+  display: none;
+}
+.account-more[open] > summary svg {
+  transform: rotate(180deg);
+}
+.account-more-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.add-account {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  min-height: 220px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--text-3);
+  transition:
+    border-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.add-account:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.add-account > span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+.add-account h3 {
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.add-account p {
+  font-size: var(--fs-xs);
+}
+.connection-help {
+  margin-top: 16px;
+  padding: 0;
+}
+.connection-help > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.connection-help > summary::-webkit-details-marker {
+  display: none;
+}
+.connection-help > summary svg:last-child {
+  margin-left: auto;
+}
+.connection-help > div {
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 14px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.connection-help h3 {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.connection-help > .tag {
+  margin: 0 16px 14px;
+}
+
+/* Add connection modal */
+.connection-type-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.connection-type-grid > button {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  text-align: left;
+}
+.connection-type-grid > button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.connection-type-grid > button.selected {
+  border-color: var(--accent);
+  background: var(--accent-softer);
+}
+.connection-type-grid > button:disabled {
+  opacity: 0.5;
+}
+.connection-type-grid strong {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.connection-type-grid small {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.type-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--accent-text);
+}
+.advanced-connection {
+  margin-bottom: 12px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.advanced-connection summary {
+  cursor: pointer;
+}
+.advanced-connection .btn {
+  margin-top: 8px;
+}
+.accounts dialog.modal form > label,
+.accounts dialog.modal form > .info-box {
+  margin-bottom: 12px;
+}
+.accounts dialog.modal form > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+/* Sync group selection */
+.binance-room-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.binance-room-toolbar .search {
+  flex: 1;
+}
+.group-selection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0;
+}
+.selection-unsaved {
+  margin-left: 8px;
+  color: var(--warning-text);
+}
+.binance-room-list {
+  display: grid;
+  gap: 2px;
+  max-height: 360px;
+  margin: 8px 0 12px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+}
+@media (max-width: 760px) {
+  .connection-type-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .account-toolbar .search {
+    width: 100%;
+  }
+  .connection-overview {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

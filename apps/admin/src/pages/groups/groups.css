@@ -1,0 +1,222 @@
+.groups-page {
+  padding-bottom: 96px;
+}
+.toolbar-select {
+  width: auto !important;
+  min-width: 128px;
+  min-height: 30px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  font-size: var(--fs-sm) !important;
+}
+.filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.groups-table tbody tr {
+  cursor: pointer;
+}
+.groups-table .check-cell {
+  width: 44px;
+  padding-right: 0;
+}
+.groups-table th.num,
+.groups-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.group-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+.group-cell > span {
+  display: grid;
+  min-width: 0;
+}
+.group-cell strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-cell small {
+  margin-top: 0 !important;
+}
+.muted-cell {
+  color: var(--text-2) !important;
+}
+.verify-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pending-note {
+  color: var(--warning-text);
+  font-size: var(--fs-xs);
+}
+.bulk-bar {
+  position: fixed;
+  left: calc(var(--sidebar-w) + 24px);
+  right: 24px;
+  bottom: 20px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 10px 12px 10px 18px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-lg);
+  animation: console-pop 0.18s var(--ease);
+}
+.nav-compact .bulk-bar {
+  left: calc(var(--sidebar-w-compact) + 24px);
+}
+.bulk-bar .spacer {
+  flex: 1;
+}
+.bulk-mode {
+  align-self: start;
+}
+.bulk-section {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+.bulk-section.off {
+  background: transparent;
+}
+.bulk-section legend {
+  padding: 0 4px;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.bulk-section-toggle {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text) !important;
+  cursor: pointer;
+}
+.bulk-section-toggle input {
+  margin-top: 3px;
+}
+.bulk-section-toggle span {
+  display: grid;
+}
+.bulk-section-toggle strong {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.bulk-section-toggle small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.segmented.mini > button {
+  height: 22px;
+  padding: 0 8px;
+}
+.bulk-results {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bulk-results li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.bulk-results li > svg:first-child {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-3);
+}
+.bulk-results li.done > svg:first-child {
+  color: var(--accent-text);
+}
+.bulk-results li.failed {
+  border-color: transparent;
+  background: var(--danger-soft);
+}
+.bulk-results li.failed > svg:first-child,
+.bulk-results li.failed small {
+  color: var(--danger-text);
+}
+.bulk-results li > span:not(.platform-icon) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.bulk-results strong {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.bulk-results small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.bulk-results em {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  white-space: nowrap;
+}
+.drawer-foot-note {
+  margin-right: auto;
+  align-self: center;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+@media (max-width: 760px) {
+  .bulk-bar {
+    left: 12px;
+    right: 12px;
+    bottom: 72px;
+  }
+  .groups-page .toolbar .segmented {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .groups-page .search {
+    width: 100%;
+  }
+  .groups-table th:nth-child(3),
+  .groups-table td:nth-child(3),
+  .groups-table th:nth-child(4),
+  .groups-table td:nth-child(4),
+  .groups-table th:nth-child(7),
+  .groups-table td:nth-child(7) {
+    display: none;
+  }
+  .group-cell {
+    min-width: 160px;
+  }
+}

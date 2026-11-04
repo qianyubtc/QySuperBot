@@ -142,6 +142,7 @@ export function seed(): Row {
     routes: [],
     keyword_rules: [],
     keyword_hits: [],
+    templates: [],
     lotteries: [
       {
         id: 'demo-lottery',
@@ -195,6 +196,7 @@ export class DemoStore {
       for (const g of this.state.groups) if (g.kind === 'supergroup') g.kind = 'group';
       if (!Array.isArray(this.state.keyword_rules)) this.state.keyword_rules = [];
       if (!Array.isArray(this.state.keyword_hits)) this.state.keyword_hits = [];
+      if (!Array.isArray(this.state.templates)) this.state.templates = [];
     } catch {
       /* A corrupt or unavailable sandbox starts from synthetic fixtures. */
     }
@@ -529,6 +531,11 @@ export class DemoStore {
         g = this.group(id);
       const keywordRoute = action?.match(/^keyword-rules(?:\/([^/]+))?$/);
       if (keywordRoute) return this.keywords(id, keywordRoute[1], method, b);
+      const memberRoute = action?.match(/^members(?:\/([^/]+))?$/);
+      if (memberRoute && method === 'GET')
+        return memberRoute[1]
+          ? this.memberDetail(id, decodeURIComponent(memberRoute[1]))
+          : this.members(id, url.searchParams.get('q') ?? '');
       if (!action && method === 'GET')
         return {
           ...this.groups().find((v: Row) => v.id === id),
@@ -768,6 +775,70 @@ export class DemoStore {
         this.log(d, 'announcement.created', b.title);
         return row;
       });
+    if (path === '/templates' && method === 'GET') {
+      const kind = url.searchParams.get('kind');
+      return structuredClone(s.templates.filter((t: Row) => !kind || t.kind === kind));
+    }
+    if (path === '/templates' && method === 'POST')
+      return this.update((d) => {
+        const value = this.templateInput(b, d);
+        const row = { id: uid(), ...value, created_at: now(), updated_at: now() };
+        d.templates.unshift(row);
+        this.log(d, 'template.created', value.title);
+        return row;
+      });
+    const template = path.match(/^\/templates\/([^/]+)$/);
+    if (template && (method === 'PUT' || method === 'DELETE'))
+      return this.update((d) => {
+        const index = d.templates.findIndex(
+          (t: Row) => t.id === template[1] && (method === 'DELETE' || t.kind === b.kind),
+        );
+        if (index < 0) throw new DemoError('模板不存在或类型不匹配', 404);
+        if (method === 'DELETE') {
+          const [removed] = d.templates.splice(index, 1);
+          this.log(d, 'template.deleted', removed.title);
+          return { deleted: true };
+        }
+        const row = { ...d.templates[index], ...this.templateInput(b, d), updated_at: now() };
+        d.templates.splice(index, 1);
+        d.templates.unshift(row);
+        this.log(d, 'template.updated', row.title);
+        return row;
+      });
+    const announcement = path.match(/^\/announcements\/([^/]+)$/);
+    if (announcement && method === 'PUT')
+      return this.update((d) => {
+        const row = d.announcements.find((a: Row) => a.id === announcement[1]);
+        if (!row) throw new DemoError('群发不存在', 404);
+        const jobs = row.deliveries.map((t: Row) => d.deliveries.find((j: Row) => j.id === t.id));
+        if (!jobs.length || jobs.some((j: Row) => j?.status !== 'pending'))
+          throw new DemoError('已有群开始发送或任务已取消，不能再修改。可以取消剩余任务后新建一条群发', 409);
+        if (!b.title?.trim() || (!b.content?.trim() && !b.image_asset_id))
+          throw new DemoError('请填写标题与消息');
+        if (b.image_asset_id && !d.images[b.image_asset_id]) throw new DemoError('本地图片不存在');
+        if (!Array.isArray(b.conversation_ids) || !b.conversation_ids.length)
+          throw new DemoError('请选择目标群');
+        if (b.scheduled_at && Date.parse(b.scheduled_at) < Date.now() - 60_000)
+          throw new DemoError('发送时间不能早于当前时间');
+        for (const job of jobs) {
+          job.status = 'cancelled';
+          job.last_error = '群发已修改，此旧任务已停止';
+        }
+        row.title = b.title;
+        row.content = b.content;
+        row.image_asset_id = b.image_asset_id;
+        row.scheduled_at = b.scheduled_at ?? now();
+        row.deliveries = b.conversation_ids.map((id: string) =>
+          this.send(
+            d,
+            this.group(id),
+            { text: b.content, image_asset_id: b.image_asset_id, scheduled_at: b.scheduled_at },
+            b.scheduled_at ? 'pending' : 'succeeded',
+          ),
+        );
+        this.log(d, 'announcement.updated', b.title);
+        return { id: row.id };
+      });
     const detail = path.match(/^\/deliveries\/([^/]+)(?:\/(retry|reconcile))?$/);
     if (detail) {
       const row = s.deliveries.find((v: Row) => v.id === detail[1]);
@@ -906,6 +977,78 @@ export class DemoStore {
         return l;
       });
     throw new DemoError('此流程需要真实平台服务，纯本地演示暂不执行。可自托管完整项目体验。', 400);
+  }
+  templateInput(b: Row, d: Row) {
+    if (!['broadcast', 'reply'].includes(b.kind)) throw new DemoError('模板类型不正确');
+    const title = String(b.title ?? '').trim(),
+      content = String(b.content ?? '').trim();
+    if (!title || title.length > 80) throw new DemoError('请填写 1–80 字的名称');
+    if (!content && !b.image_asset_id) throw new DemoError('请填写内容或上传图片');
+    if (b.kind === 'reply' && b.image_asset_id) throw new DemoError('常用语暂只支持文字');
+    if (b.image_asset_id && !d.images[b.image_asset_id]) throw new DemoError('本地图片不存在');
+    return { kind: b.kind, title, content, image_asset_id: b.image_asset_id ?? null };
+  }
+  /** Known members of a demo group, mirroring GET /conversations/:id/members. */
+  members(id: string, query = '') {
+    this.group(id);
+    const s = this.state,
+      people = new Map<string, Row>();
+    const person = (user: string) => {
+      if (!people.has(user))
+        people.set(user, {
+          user_id: user,
+          name: user,
+          avatar: null,
+          message_count: 0,
+          flagged_count: 0,
+          last_message_at: null,
+          membership_status: null,
+          membership_at: null,
+          warnings: 0,
+          blacklist: null,
+          verification_status: null,
+          last_activity_at: null,
+        });
+      return people.get(user)!;
+    };
+    for (const m of s.messages.filter((m: Row) => m.conversation_id === id && m.direction === 'incoming')) {
+      const p = person(m.sender_id);
+      p.name = m.sender_name || p.name;
+      p.message_count++;
+      if (['blocked', 'observed'].includes(m.verdict)) p.flagged_count++;
+      if (!p.last_message_at || m.created_at > p.last_message_at) p.last_message_at = m.created_at;
+    }
+    for (const b of s.blacklists.filter((b: Row) => b.conversation_id === id))
+      person(b.user_id).blacklist = { id: b.id, reason: b.reason, expires_at: b.expires_at ?? null };
+    for (const a of s.actions.filter((a: Row) => a.conversation_id === id)) {
+      const p = person(a.user_id);
+      if (a.action === 'warn' && a.warning_active !== false) p.warnings++;
+    }
+    for (const v of s.verifications.filter((v: Row) => v.conversation_id === id)) {
+      const p = person(v.user_id);
+      if (!p.verification_status) p.verification_status = v.status;
+    }
+    for (const p of people.values()) p.last_activity_at = p.last_message_at;
+    const q = query.trim().toLowerCase();
+    const members = [...people.values()]
+      .filter((p) => !q || p.user_id.toLowerCase().includes(q) || String(p.name).toLowerCase().includes(q))
+      .sort((a, b) => String(b.last_activity_at ?? '').localeCompare(String(a.last_activity_at ?? '')));
+    return structuredClone({ members: members.slice(0, 200), truncated: members.length > 200 });
+  }
+  memberDetail(id: string, user: string) {
+    const member = this.members(id).members.find((m: Row) => m.user_id === user);
+    if (!member) throw new DemoError('没有这位成员的记录', 404);
+    const s = this.state;
+    return structuredClone({
+      member,
+      messages: s.messages
+        .filter((m: Row) => m.conversation_id === id && m.sender_id === user && m.direction === 'incoming')
+        .slice(-30)
+        .reverse(),
+      actions: s.actions.filter((a: Row) => a.conversation_id === id && a.user_id === user),
+      verifications: s.verifications.filter((v: Row) => v.conversation_id === id && v.user_id === user),
+      keyword_hits: s.keyword_hits.filter((h: Row) => h.conversation_id === id && h.user_id === user),
+    });
   }
   writeOnce(options: Row, path: string, fn: (s: Row) => any) {
     const key = options.key ? `${path}:${options.key}` : null,

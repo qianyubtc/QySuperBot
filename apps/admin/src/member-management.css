@@ -16,13 +16,13 @@
 .member-management small {
   display: block;
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--text-3);
 }
 .member-management .error-text {
-  color: #a3423b;
+  color: var(--danger-text);
 }
 .member-command-settings {
-  border-block: 1px solid var(--line);
+  border-block: 1px solid var(--border);
   margin: 30px 0;
   padding: 22px 0;
 }
@@ -34,7 +34,7 @@
 }
 .member-command-list code {
   padding: 9px 12px;
-  background: #f0f4ee;
+  background: var(--accent-soft);
   border-radius: 6px;
 }
 .member-management .table-wrap {

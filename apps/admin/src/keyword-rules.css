@@ -29,11 +29,11 @@
   line-height: 1.8;
 }
 .keyword-editor {
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 16px;
   padding: 22px;
   margin-block: 22px;
-  background: var(--surface, #fff);
+  background: var(--surface, var(--surface));
 }
 .keyword-editor fieldset {
   border: 0;
@@ -54,7 +54,7 @@
 }
 .keyword-editor small {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-3);
   line-height: 1.7;
 }
 .keyword-editor .check-row {
@@ -65,7 +65,7 @@
 }
 .keyword-upload {
   padding: 16px;
-  border: 1px dashed var(--line);
+  border: 1px dashed var(--border);
   border-radius: 10px;
 }
 .keyword-image {
@@ -90,21 +90,21 @@
 .keyword-hit,
 .keyword-empty {
   padding: 20px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 12px;
   min-width: 0;
 }
 .keyword-rule.is-disabled {
-  background: #f7f8f5;
+  background: var(--surface-2);
 }
 .keyword-rule p {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text-3);
 }
 .keyword-tag {
   display: inline-block;
   border-radius: 30px;
-  background: #edf4e7;
+  background: var(--accent-soft);
   padding: 4px 10px;
   margin-left: 10px;
   font-size: 12px;
@@ -116,13 +116,13 @@
 }
 .keyword-words span {
   padding: 5px 9px;
-  background: #f2f4ee;
+  background: var(--accent-soft);
   border-radius: 5px;
   overflow-wrap: anywhere;
   max-width: 100%;
 }
 .keyword-reply-preview {
-  border-left: 3px solid var(--line);
+  border-left: 3px solid var(--border);
   margin-top: 14px;
   padding-left: 12px;
 }
@@ -135,11 +135,11 @@
 }
 .keyword-reply-preview span {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-3);
 }
 .keyword-preview {
   padding-block: 24px;
-  border-block: 1px solid var(--line);
+  border-block: 1px solid var(--border);
   margin-bottom: 24px;
   display: grid;
   gap: 14px;
@@ -158,10 +158,10 @@
 }
 .keyword-hit.failed,
 .keyword-hit.unknown {
-  border-color: #d5af84;
+  border-color: var(--warning);
 }
 .keyword-hit.succeeded {
-  border-color: #b4cca6;
+  border-color: var(--border);
 }
 @media (max-width: 700px) {
   .keyword-rules {

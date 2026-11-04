@@ -1,0 +1,70 @@
+.integrations .card + .card {
+  margin-top: 16px;
+}
+.route-list {
+  display: grid;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+.route-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+}
+.route-list li:hover {
+  background: var(--hover);
+}
+.route-list li > svg {
+  color: var(--text-3);
+}
+.route-end {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.route-list .badge {
+  margin-left: auto;
+}
+.integration-doc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+}
+.integration-doc > .card-body:first-child {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border-right: 1px solid var(--border);
+}
+.integration-doc > .card-body:first-child > svg {
+  color: var(--accent-text);
+}
+.integration-doc h2 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.integration-sample {
+  display: grid;
+  gap: 10px;
+}
+.choice-box .group-choices {
+  max-height: 220px;
+}
+.scope-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+@media (max-width: 900px) {
+  .integration-doc {
+    grid-template-columns: 1fr;
+  }
+  .integration-doc > .card-body:first-child {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}

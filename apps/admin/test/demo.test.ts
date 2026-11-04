@@ -413,3 +413,79 @@ test('unknown endpoints fail closed instead of falling back to HTTP', () => {
   const s = new DemoStore();
   assert.throws(() => s.request('/unimplemented'), /真实平台服务/);
 });
+
+test('broadcast templates and quick replies are stored locally and survive reload', () => {
+  const storage = memory();
+  const s = new DemoStore(storage);
+  const saved = post(s, '/templates', { kind: 'broadcast', title: '周末活动', content: '周六见' });
+  post(s, '/templates', { kind: 'reply', title: '欢迎', content: '欢迎新朋友' });
+  assert.deepEqual(
+    s.request('/templates?kind=broadcast').map((t: any) => t.title),
+    ['周末活动'],
+  );
+  assert.throws(() => post(s, '/templates', { kind: 'reply', title: '空', content: ' ' }), /内容/);
+  s.request(`/templates/${saved.id}`, {
+    method: 'PUT',
+    body: { kind: 'broadcast', title: '周末活动', content: '改到周日' },
+  });
+  const reloaded = new DemoStore(storage);
+  assert.equal(reloaded.request('/templates?kind=broadcast')[0].content, '改到周日');
+  reloaded.request(`/templates/${saved.id}`, { method: 'DELETE' });
+  assert.equal(reloaded.request('/templates?kind=broadcast').length, 0);
+});
+
+test('a scheduled demo broadcast can be edited until a target starts sending', () => {
+  const s = new DemoStore();
+  const at = new Date(Date.now() + 3600_000).toISOString();
+  const created = post(s, '/announcements', {
+    title: '定时',
+    content: '旧内容',
+    conversation_ids: ['demo-telegram-0'],
+    scheduled_at: at,
+  });
+  s.request(`/announcements/${created.id}`, {
+    method: 'PUT',
+    body: {
+      title: '定时',
+      content: '新内容',
+      conversation_ids: ['demo-telegram-0', 'demo-qq-0'],
+      scheduled_at: at,
+    },
+  });
+  const row = s.request('/announcements').find((a: any) => a.id === created.id);
+  assert.equal(row.content, '新内容');
+  assert.equal(row.deliveries.length, 2);
+  assert.ok(row.deliveries.every((d: any) => d.status === 'pending'));
+  assert.equal(
+    s.state.deliveries.filter((d: any) => d.status === 'cancelled' && d.content === '旧内容').length,
+    1,
+  );
+  s.update((d) => {
+    d.deliveries.find((j: any) => j.id === row.deliveries[0].id).status = 'succeeded';
+  });
+  assert.throws(
+    () =>
+      s.request(`/announcements/${created.id}`, {
+        method: 'PUT',
+        body: { title: 'x', content: '再改', conversation_ids: ['demo-telegram-0'], scheduled_at: at },
+      }),
+    /不能再修改/,
+  );
+});
+
+test('the demo member directory lists speakers with blacklist state and shows details', () => {
+  const s = new DemoStore();
+  const group = 'demo-telegram-0';
+  const { members } = s.request(`/conversations/${group}/members`);
+  assert.ok(members.length > 0);
+  const first = members[0];
+  post(s, '/blacklists', { conversation_id: group, user_id: first.user_id, reason: '演示拉黑' });
+  const listed = s
+    .request(`/conversations/${group}/members`)
+    .members.find((m: any) => m.user_id === first.user_id);
+  assert.equal(listed.blacklist.reason, '演示拉黑');
+  const detail = s.request(`/conversations/${group}/members/${encodeURIComponent(first.user_id)}`);
+  assert.equal(detail.member.user_id, first.user_id);
+  assert.ok(detail.messages.every((m: any) => m.direction === 'incoming'));
+  assert.throws(() => s.request(`/conversations/${group}/members/nobody`), /没有这位成员/);
+});

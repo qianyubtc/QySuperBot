@@ -19,6 +19,8 @@ import { QQLogin } from './qq-login.ts';
 import { QQRequests } from './qq-requests.ts';
 import { QQVerification } from './qq-verification.ts';
 import { KeywordRules } from './keyword-rules.ts';
+import { TemplatesService } from './templates.ts';
+import { MembersDirectory } from './members.ts';
 
 export async function createServices(
   config: Config,
@@ -51,6 +53,8 @@ export async function createServices(
     );
     const jobs = new JobsService(ctx);
     const keywords = new KeywordRules(ctx, jobs);
+    const templates = new TemplatesService(ctx);
+    const directory = new MembersDirectory(ctx);
     const qqVerification = new QQVerification(ctx, jobs, (id) => accounts.refresh(id, '自动验证权限刷新'));
     const messages = new MessagesService(ctx, jobs, qqVerification);
     const features = new FeaturesService(ctx, jobs, auth, qqVerification);
@@ -68,6 +72,8 @@ export async function createServices(
       accounts,
       jobs,
       keywords,
+      templates,
+      directory,
       messages,
       features,
       chat,

@@ -9,12 +9,12 @@
   display: none;
 }
 .moderation-results > small {
-  color: #847561;
+  color: var(--text-2);
 }
 .moderation-result {
-  border-left: 2px solid #d5c59e;
+  border-left: 2px solid var(--warning);
   padding-left: 8px;
-  color: #806326;
+  color: var(--warning-text);
 }
 .moderation-result a {
   color: inherit;
@@ -26,17 +26,17 @@
   overflow-wrap: anywhere;
 }
 .moderation-result.succeeded {
-  color: #40633f;
-  border-color: #8bad82;
+  color: var(--text-2);
+  border-color: var(--accent-border);
 }
 .moderation-result.failed,
 .moderation-result.unknown {
-  color: #a14d3d;
-  border-color: #d2998d;
+  color: var(--danger-text);
+  border-color: var(--danger);
 }
 .moderation-result.cancelled {
-  color: #7b8275;
-  border-color: #c6ccbf;
+  color: var(--text-2);
+  border-color: var(--border);
 }
 .policy-availability {
   margin: 12px 0;

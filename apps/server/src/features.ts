@@ -310,34 +310,7 @@ export class FeaturesService {
           return { id: previous.id as string };
         }
       }
-      const targets = await tx.query(
-        'SELECT a.id,a.kind,a.settings FROM conversations c JOIN accounts a ON a.id=c.executor_account_id WHERE c.id=ANY($1::text[])',
-        [[...new Set(value.conversation_ids)]],
-      );
-      if (targets.length !== new Set(value.conversation_ids).size)
-        throw new ApiError(404, 'CONVERSATION_NOT_FOUND', '目标群不存在');
-      if (
-        targets.some(
-          (a) =>
-            (a.kind === 'telegram' && value.content.length > (value.image_asset_id ? 1024 : 4096)) ||
-            (a.kind === 'binance' && value.content.length > 2000),
-        )
-      )
-        throw new ApiError(
-          400,
-          'CONTENT_TOO_LONG',
-          '内容超过目标平台单条限制：Telegram 文字 4096、图片说明 1024，币安 2000 字符',
-        );
-      if (value.image_asset_id) {
-        await this.ctx.uploads.get(value.image_asset_id, tx);
-        for (const target of targets) {
-          if (!['telegram', 'qq', 'binance', 'demo'].includes(target.kind))
-            throw new ApiError(400, 'MEDIA_UNSUPPORTED', '图片群发当前支持 Telegram、QQ、币安及演示群');
-          if (target.kind === 'binance') this.ctx.adapters.binance!.requireVersion(target, 1, 8);
-        }
-      }
-      if (epoch(due) < Date.now() - 60_000)
-        throw new ApiError(400, 'INVALID_SCHEDULE', '发送时间不能早于当前时间');
+      await this.validateAnnouncement(tx, value, due);
       await tx.query(
         'INSERT INTO announcements(id,title,content,targets,scheduled_at,image_asset_id) VALUES($1,$2,$3,$4::jsonb,$5,$6)',
         [
@@ -349,28 +322,107 @@ export class FeaturesService {
           value.image_asset_id ?? null,
         ],
       );
-      for (const target of new Set(value.conversation_ids))
-        await this.jobs.enqueue(
-          {
-            key: `announcement:${id}:${target}`,
-            conversationId: target,
-            action: 'message.send',
-            params: {
-              segments: [
-                ...(value.content ? [{ type: 'text', text: value.content }] : []),
-                ...(value.image_asset_id
-                  ? [{ type: 'image', asset_id: value.image_asset_id, alt: '群发图片' }]
-                  : []),
-              ],
-            },
-            announcementId: id,
-            dueAt: due,
-          },
-          tx,
-        );
+      await this.enqueueAnnouncement(tx, id, value, due, `announcement:${id}`);
       await audit(tx, actor, 'announcement.created', id, {
         title: value.title,
         targets: value.conversation_ids.length,
+      });
+      return { id };
+    });
+  }
+  private async validateAnnouncement(tx: Sql, value: z.infer<typeof announcementInput>, due: string) {
+    const targets = await tx.query(
+      'SELECT a.id,a.kind,a.settings FROM conversations c JOIN accounts a ON a.id=c.executor_account_id WHERE c.id=ANY($1::text[])',
+      [[...new Set(value.conversation_ids)]],
+    );
+    if (targets.length !== new Set(value.conversation_ids).size)
+      throw new ApiError(404, 'CONVERSATION_NOT_FOUND', '目标群不存在');
+    if (
+      targets.some(
+        (a) =>
+          (a.kind === 'telegram' && value.content.length > (value.image_asset_id ? 1024 : 4096)) ||
+          (a.kind === 'binance' && value.content.length > 2000),
+      )
+    )
+      throw new ApiError(
+        400,
+        'CONTENT_TOO_LONG',
+        '内容超过目标平台单条限制：Telegram 文字 4096、图片说明 1024，币安 2000 字符',
+      );
+    if (value.image_asset_id) {
+      await this.ctx.uploads.get(value.image_asset_id, tx);
+      for (const target of targets) {
+        if (!['telegram', 'qq', 'binance', 'demo'].includes(target.kind))
+          throw new ApiError(400, 'MEDIA_UNSUPPORTED', '图片群发当前支持 Telegram、QQ、币安及演示群');
+        if (target.kind === 'binance') this.ctx.adapters.binance!.requireVersion(target, 1, 8);
+      }
+    }
+    if (epoch(due) < Date.now() - 60_000)
+      throw new ApiError(400, 'INVALID_SCHEDULE', '发送时间不能早于当前时间');
+  }
+  private async enqueueAnnouncement(
+    tx: Sql,
+    id: string,
+    value: z.infer<typeof announcementInput>,
+    due: string,
+    keyPrefix: string,
+  ) {
+    for (const target of new Set(value.conversation_ids))
+      await this.jobs.enqueue(
+        {
+          key: `${keyPrefix}:${target}`,
+          conversationId: target,
+          action: 'message.send',
+          params: {
+            segments: [
+              ...(value.content ? [{ type: 'text', text: value.content }] : []),
+              ...(value.image_asset_id
+                ? [{ type: 'image', asset_id: value.image_asset_id, alt: '群发图片' }]
+                : []),
+            ],
+          },
+          announcementId: id,
+          dueAt: due,
+        },
+        tx,
+      );
+  }
+  /** Replaces a broadcast whose deliveries have not started: old jobs stop and new ones are queued atomically. */
+  async updateAnnouncement(id: string, input: unknown, actor: string) {
+    const value = announcementInput.parse(input);
+    const due = value.scheduled_at ?? new Date().toISOString();
+    return this.ctx.db.transaction(async (tx) => {
+      const announcement = (await tx.query('SELECT id FROM announcements WHERE id=$1 FOR UPDATE', [id]))[0];
+      if (!announcement) throw new ApiError(404, 'NOT_FOUND', '群发不存在');
+      const jobs = await tx.query('SELECT id,status FROM jobs WHERE announcement_id=$1 FOR UPDATE', [id]);
+      if (!jobs.length || jobs.some((job) => job.status !== 'pending'))
+        throw new ApiError(
+          409,
+          'ANNOUNCEMENT_STARTED',
+          '已有群开始发送或任务已取消，不能再修改。可以取消剩余任务后新建一条群发',
+        );
+      await this.validateAnnouncement(tx, value, due);
+      // Detached old jobs keep their history in the delivery list but no longer belong to this broadcast.
+      await tx.query(
+        "UPDATE jobs SET status='cancelled',announcement_id=NULL,last_error='群发已修改，此旧任务已停止',updated_at=now() WHERE announcement_id=$1 AND status='pending'",
+        [id],
+      );
+      await tx.query(
+        'UPDATE announcements SET title=$2,content=$3,targets=$4::jsonb,scheduled_at=$5,image_asset_id=$6 WHERE id=$1',
+        [
+          id,
+          value.title,
+          value.content,
+          json([...new Set(value.conversation_ids)]),
+          due,
+          value.image_asset_id ?? null,
+        ],
+      );
+      await this.enqueueAnnouncement(tx, id, value, due, `announcement:${id}:${randomUUID()}`);
+      await audit(tx, actor, 'announcement.updated', id, {
+        title: value.title,
+        targets: new Set(value.conversation_ids).size,
+        replaced: jobs.length,
       });
       return { id };
     });

@@ -1,0 +1,23 @@
+.safety .metrics > .metric {
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease);
+}
+.safety .metrics > .metric:hover {
+  border-color: var(--border-strong);
+}
+.safety .metric strong small {
+  color: var(--text-3);
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+.safety-coverage {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.safety-coverage .text-link {
+  margin-left: auto;
+  white-space: nowrap;
+}

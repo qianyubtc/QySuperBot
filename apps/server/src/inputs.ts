@@ -82,3 +82,18 @@ export const lotteryInput = z.strictObject({
   winners_count: z.number().int().min(1).max(100),
   closes_at: z.iso.datetime(),
 });
+export const templateInput = z
+  .strictObject({
+    kind: z.enum(['broadcast', 'reply']),
+    title: z.string().trim().min(1).max(80),
+    content: z.string().trim().max(8000).default(''),
+    image_asset_id: z
+      .string()
+      .regex(/^upload-image-[a-f0-9]{64}$/)
+      .nullable()
+      .optional(),
+  })
+  .refine((value) => value.content.length || value.image_asset_id, { message: '请填写内容或上传图片' })
+  .refine((value) => value.kind === 'broadcast' || !value.image_asset_id, {
+    message: '常用语暂只支持文字',
+  });

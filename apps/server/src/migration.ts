@@ -87,6 +87,12 @@ CREATE TABLE IF NOT EXISTS announcements (
   scheduled_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE announcements ADD COLUMN IF NOT EXISTS image_asset_id text REFERENCES uploaded_images(id);
+CREATE TABLE IF NOT EXISTS message_templates (
+  id text PRIMARY KEY, kind text NOT NULL CHECK (kind IN ('broadcast','reply')), title text NOT NULL,
+  content text NOT NULL, image_asset_id text REFERENCES uploaded_images(id),
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS message_templates_kind ON message_templates(kind,updated_at DESC);
 CREATE TABLE IF NOT EXISTS jobs (
   id text PRIMARY KEY, idempotency_key text UNIQUE NOT NULL, intent_hash text NOT NULL,
   conversation_id text NOT NULL REFERENCES conversations(id), account_id text NOT NULL REFERENCES accounts(id),

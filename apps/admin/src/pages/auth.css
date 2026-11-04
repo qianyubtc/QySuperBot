@@ -1,0 +1,96 @@
+.auth-page {
+  position: relative;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 32px 16px;
+  overflow: hidden;
+  background: radial-gradient(900px 480px at 50% -10%, var(--accent-soft), transparent 70%), var(--bg);
+}
+.auth-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 30%, #000 20%, transparent 75%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.auth-corner {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+.auth-card,
+.auth-state {
+  position: relative;
+  width: min(400px, 100%);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(8px);
+}
+.auth-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.auth-state p {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+  font-weight: 600;
+}
+.auth-card h1,
+.auth-state h1 {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.auth-lead {
+  margin: 6px 0 22px !important;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.auth-card .btn.block {
+  margin-top: 4px;
+}
+.auth-points {
+  display: grid;
+  gap: 8px;
+  margin: 22px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+.auth-points li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.auth-points svg {
+  color: var(--accent-text);
+}
+.auth-foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}

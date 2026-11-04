@@ -1,0 +1,219 @@
+.overview-demo {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.overview-demo .text-link {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.attention {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.attention-item {
+  --tone: var(--info-text);
+  --tone-soft: var(--info-soft);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  transition: background 0.15s var(--ease);
+}
+.attention-item:hover {
+  background: var(--surface-2);
+}
+.attention-item > svg:first-child {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border-radius: var(--r-md);
+  background: var(--tone-soft);
+  color: var(--tone);
+}
+.attention-item > svg:last-child {
+  margin-left: auto;
+  color: var(--text-3);
+  flex: none;
+}
+.attention-item span {
+  display: grid;
+  min-width: 0;
+}
+.attention-item strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.attention-item small {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attention-item.warning {
+  --tone: var(--warning-text);
+  --tone-soft: var(--warning-soft);
+}
+.attention-item.danger {
+  --tone: var(--danger-text);
+  --tone-soft: var(--danger-soft);
+}
+.overview .grid-2 {
+  margin-bottom: 16px;
+}
+.overview-list {
+  display: grid;
+  padding: 6px;
+}
+.overview-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+}
+.overview-row:hover {
+  background: var(--hover);
+}
+.overview-row-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.overview-row-main strong {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-row-main small {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overview-count {
+  display: grid;
+  justify-items: end;
+}
+.overview-count strong {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.overview-count small {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.chart {
+  padding: 8px 14px 12px;
+}
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.chart-grid {
+  stroke: var(--border);
+  stroke-dasharray: 3 4;
+}
+.chart-axis {
+  fill: var(--text-3);
+  font-size: 11px;
+}
+.chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-line.blocked {
+  stroke: var(--warning);
+  stroke-width: 1.75;
+  stroke-dasharray: 4 4;
+}
+.chart-point {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.chart-fill-top {
+  stop-color: var(--accent);
+  stop-opacity: 0.22;
+}
+.chart-fill-bottom {
+  stop-color: var(--accent);
+  stop-opacity: 0;
+}
+.chart-legend {
+  display: flex;
+  gap: 14px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-legend span::before {
+  content: '';
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.chart-legend .blocked::before {
+  background: var(--warning);
+}
+.timeline {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 10px 18px 16px;
+  list-style: none;
+}
+.timeline li {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+}
+.timeline li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 20px;
+  bottom: -8px;
+  width: 1px;
+  background: var(--border);
+}
+.timeline-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.timeline strong {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.timeline small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}

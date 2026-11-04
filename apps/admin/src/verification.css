@@ -6,7 +6,7 @@
 }
 .verification-intro p {
   margin: 6px 0;
-  color: var(--muted);
+  color: var(--text-3);
   line-height: 1.65;
 }
 .verification-intro .btn {
@@ -47,70 +47,70 @@
   display: block;
   max-width: 320px;
   margin-top: 7px;
-  color: var(--muted);
+  color: var(--text-3);
   line-height: 1.55;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 .verification-table td small.error-text {
-  color: #a63b33;
+  color: var(--danger-text);
 }
 .verification-state {
   display: inline-block;
   border-radius: 5px;
   padding: 5px 8px;
   font-size: 12px;
-  background: #eef2f1;
-  color: #52615a;
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 .verification-state.passed {
-  background: #e4f1e7;
-  color: #2d653e;
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 .verification-state.removed,
 .verification-state.failed,
 .verification-state.challenge_failed,
 .verification-state.timeout_failed {
-  background: #fbe9e5;
-  color: #9f3c30;
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 .verification-state.failure_failed {
-  background: #fbe9e5;
-  color: #9f3c30;
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 .verification-state.timeout_mute_failed {
-  background: #fbe9e5;
-  color: #9f3c30;
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 .verification-state.failure_unknown,
 .verification-state.failure_succeeded,
 .verification-state.cooldown,
 .verification-state.timeout_mute_unknown,
 .verification-state.muted {
-  background: #fff1d7;
-  color: #8b611f;
+  background: var(--warning-soft);
+  color: var(--warning-text);
 }
 .verification-state.failure_pending,
 .verification-state.failure_in_flight,
 .verification-state.timeout_mute_pending,
 .verification-state.timeout_mute_in_flight {
-  background: #e8eff8;
-  color: #365c87;
+  background: var(--info-soft);
+  color: var(--info-text);
 }
 .verification-state.manual_review,
 .verification-state.expired,
 .verification-state.challenge_unknown,
 .verification-state.timeout_unknown {
-  background: #fff1d7;
-  color: #8b611f;
+  background: var(--warning-soft);
+  color: var(--warning-text);
 }
 .verification-state.pending,
 .verification-state.challenge_pending,
 .verification-state.challenge_in_flight,
 .verification-state.timeout_pending,
 .verification-state.timeout_in_flight {
-  background: #e8eff8;
-  color: #365c87;
+  background: var(--info-soft);
+  color: var(--info-text);
 }
 .verification-actions {
   display: flex;

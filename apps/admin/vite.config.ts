@@ -1,6 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const src = fileURLToPath(new URL('./src/', import.meta.url));
+// Modules the browser demo replaces, matched by the file they resolve to so that pages in
+// subfolders ('../api') are swapped as reliably as root modules ('./api').
+const demoModules: Record<string, string> = {
+  [resolve(src, 'api')]: 'api.ts',
+  [resolve(src, 'BinanceLogin')]: 'BinanceLogin.tsx',
+  [resolve(src, 'QQLogin')]: 'QQLogin.tsx',
+};
 
 export default defineConfig(({ mode }) => ({
   root: fileURLToPath(new URL('.', import.meta.url)),
@@ -10,14 +20,10 @@ export default defineConfig(({ mode }) => ({
       name: 'browser-only-demo',
       enforce: 'pre',
       resolveId(source, importer) {
-        if (mode !== 'demo' || !importer?.includes('/apps/admin/src/')) return;
-        const modules: Record<string, string> = {
-          './api': 'api.ts',
-          './BinanceLogin': 'BinanceLogin.tsx',
-          './QQLogin': 'QQLogin.tsx',
-        };
-        if (modules[source])
-          return fileURLToPath(new URL('./src/demo/' + modules[source], import.meta.url));
+        if (mode !== 'demo' || !importer || !source.startsWith('.')) return;
+        if (!importer.startsWith(src) || importer.startsWith(resolve(src, 'demo'))) return;
+        const target = demoModules[resolve(dirname(importer), source).replace(/\.tsx?$/, '')];
+        if (target) return resolve(src, 'demo', target);
       },
       generateBundle() {
         if (mode !== 'demo') return;
