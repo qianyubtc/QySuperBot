@@ -28,8 +28,12 @@ export class MemoryReplayStore implements ReplayStore {
 }
 
 type RequestMaterial = {
-  method: string; path: string; body: string | Buffer; secret: string;
-  keyId: string; purpose: 'events' | 'commands' | 'control';
+  method: string;
+  path: string;
+  body: string | Buffer;
+  secret: string;
+  keyId: string;
+  purpose: 'events' | 'commands' | 'control';
 };
 
 function digest(input: RequestMaterial, timestamp: string, nonce: string): Buffer {
@@ -39,7 +43,9 @@ function digest(input: RequestMaterial, timestamp: string, nonce: string): Buffe
     throw new Error('Sign the HTTP method and exact path including its query string');
   }
   return createHmac('sha256', input.secret)
-    .update(`v1\n${input.keyId}\n${input.purpose}\n${input.method.toUpperCase()}\n${input.path}\n${timestamp}\n${nonce}\n`)
+    .update(
+      `v1\n${input.keyId}\n${input.purpose}\n${input.method.toUpperCase()}\n${input.path}\n${timestamp}\n${nonce}\n`,
+    )
     .update(input.body)
     .digest();
 }
@@ -56,19 +62,24 @@ export function signRequest(input: RequestMaterial & { now?: number; nonce?: str
   });
 }
 
-export async function verifyRequest(input: RequestMaterial & {
-  headers: Headers;
-  scope: string;
-  replayStore: ReplayStore;
-  now?: number;
-}): Promise<void> {
+export async function verifyRequest(
+  input: RequestMaterial & {
+    headers: Headers;
+    scope: string;
+    replayStore: ReplayStore;
+    now?: number;
+  },
+): Promise<void> {
   const now = Math.floor(input.now ?? Date.now() / 1000);
   const timestamp = input.headers.get('x-superbot-timestamp') ?? '';
   const nonce = input.headers.get('x-superbot-nonce') ?? '';
   const signature = input.headers.get('x-superbot-signature') ?? '';
-  if (input.headers.get('x-superbot-key-id') !== input.keyId
-      || !/^(0|[1-9]\d{0,11})$/.test(timestamp) || !/^[A-Za-z0-9_-]{16,128}$/.test(nonce)
-      || !/^v1=[a-f0-9]{64}$/.test(signature)) {
+  if (
+    input.headers.get('x-superbot-key-id') !== input.keyId ||
+    !/^(0|[1-9]\d{0,11})$/.test(timestamp) ||
+    !/^[A-Za-z0-9_-]{16,128}$/.test(nonce) ||
+    !/^v1=[a-f0-9]{64}$/.test(signature)
+  ) {
     throw new ProtocolError('INVALID_SIGNATURE', 'Missing or malformed signature', 401);
   }
   const signedAt = Number(timestamp);
@@ -79,7 +90,13 @@ export async function verifyRequest(input: RequestMaterial & {
     throw new ProtocolError('INVALID_SIGNATURE', 'Signature does not match the request', 401);
   }
   // Invalid signatures never reserve a nonce and cannot poison the replay cache.
-  if (!await input.replayStore.consume(JSON.stringify([input.scope, input.keyId, input.purpose, nonce]), signedAt + 301, now)) {
+  if (
+    !(await input.replayStore.consume(
+      JSON.stringify([input.scope, input.keyId, input.purpose, nonce]),
+      signedAt + 301,
+      now,
+    ))
+  ) {
     throw new ProtocolError('REPLAYED_REQUEST', 'Nonce has already been used', 401);
   }
 }

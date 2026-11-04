@@ -47,9 +47,7 @@ export async function api<T = any>(
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith('/auth/'))
       window.dispatchEvent(new Event('superbot:unauthorized'));
-    const fields = value.error?.fields
-      ?.map((field: any) => `${field.path}：${field.message}`)
-      .join('；');
+    const fields = value.error?.fields?.map((field: any) => `${field.path}：${field.message}`).join('；');
     throw new RequestError(
       fields || value.error?.message || `请求失败（${response.status}）`,
       response.status,
@@ -62,4 +60,6 @@ export async function api<T = any>(
 export const mediaUrl = (path: string) => path;
 export const openChatStream = (path: string): EventSource => new EventSource(path);
 
-export async function exampleImage(): Promise<Record<string, any>> { throw new Error('示例海报仅在演示模式提供'); }
+export async function exampleImage(): Promise<Record<string, any>> {
+  throw new Error('示例海报仅在演示模式提供');
+}

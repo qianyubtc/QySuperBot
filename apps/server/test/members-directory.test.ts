@@ -78,6 +78,15 @@ test('the member directory lists speakers, joiners and blacklisted members with 
   assert.equal(byId.carol.membership_status, 'active');
   assert.equal(byId.carol.message_count, 0);
   assert.equal(byId.dave.blacklist.reason, '发广告');
+  // The avatar is served through the chat avatar proxy keyed by the member's latest message.
+  const latest = (
+    await s.db.query(
+      "SELECT id FROM messages WHERE conversation_id=$1 AND sender_id='alice' ORDER BY created_at DESC LIMIT 1",
+      [group.id],
+    )
+  )[0]!;
+  assert.equal(byId.alice.avatar_message_id, latest.id);
+  assert.equal(byId.carol.avatar_message_id, null);
   const order = body.members.map((m: any) => m.user_id);
   assert.ok(order.indexOf('carol') < order.indexOf('bob'), 'most recent activity comes first');
 });

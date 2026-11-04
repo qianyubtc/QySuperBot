@@ -120,12 +120,7 @@ const platforms = [
     state: 'Bot Token 接入',
     text: '连接机器人，管理已发现的群，在后台收消息、回复与安排活动。',
     connection: '填写 Bot Token，把机器人加入群并授予所需权限。',
-    points: [
-      '群消息与图片聚合',
-      '图文群发与定时消息',
-      '超级群限时禁言、封禁与警告',
-      '按群开启管理员命令',
-    ],
+    points: ['群消息与图片聚合', '图文群发与定时消息', '超级群限时禁言、封禁与警告', '按群开启管理员命令'],
     management: '机器人实际获得的管理权限决定可用动作；执行前会再次核对。',
     limit: '群列表来自机器人已发现的会话。新群加入机器人后，发送一条消息再刷新列表。',
   },
@@ -227,8 +222,7 @@ function ProductDemo() {
   const draft = drafts[channel.id] ?? '';
   const quoted = quotes[channel.id] ?? false;
   const setDraft = (value: string) => setDrafts((current) => ({ ...current, [channel.id]: value }));
-  const setQuoted = (value: boolean) =>
-    setQuotes((current) => ({ ...current, [channel.id]: value }));
+  const setQuoted = (value: boolean) => setQuotes((current) => ({ ...current, [channel.id]: value }));
   const sent = messages[channel.id] ?? [];
   useEffect(() => {
     const el = history.current;
@@ -486,16 +480,9 @@ function BroadcastShowcase() {
           下一种可能。
         </strong>
         <small>社群分享会 · COMMUNITY TALK</small>
-        <MessageCircle
-          className="lp-poster-symbol"
-          size={110}
-          strokeWidth={0.7}
-          aria-hidden="true"
-        />
+        <MessageCircle className="lp-poster-symbol" size={110} strokeWidth={0.7} aria-hidden="true" />
       </div>
-      <p className="lp-broadcast-caption">
-        今晚一起聊聊新功能与社群近况。欢迎带上你的想法，我们群里见。
-      </p>
+      <p className="lp-broadcast-caption">今晚一起聊聊新功能与社群近况。欢迎带上你的想法，我们群里见。</p>
       <fieldset className="lp-broadcast-targets">
         <legend>试着选择发布平台</legend>
         {['Telegram', 'QQ', '币安'].map((target) => (
@@ -522,11 +509,7 @@ function BroadcastShowcase() {
           <CalendarClock size={15} />
           发送时间
         </label>
-        <select
-          id="lp-broadcast-time"
-          value={timing}
-          onChange={(event) => setTiming(event.target.value)}
-        >
+        <select id="lp-broadcast-time" value={timing} onChange={(event) => setTiming(event.target.value)}>
           <option value="scheduled">今晚 20:00 · 北京时间</option>
           <option value="now">立即发送</option>
         </select>
@@ -638,12 +621,7 @@ function DeveloperExample() {
         >
           查询回执
         </button>
-        <button
-          type="button"
-          className="lp-copy"
-          onClick={() => void copy()}
-          aria-label="复制 API 示例"
-        >
+        <button type="button" className="lp-copy" onClick={() => void copy()} aria-label="复制 API 示例">
           {copied ? <Check size={14} /> : <Copy size={14} />}
           <span>{copied ? '已复制' : '复制'}</span>
         </button>
@@ -867,11 +845,7 @@ export default function Landing() {
           </div>
         </section>
 
-        <section
-          className="lp-features lp-container"
-          id="features"
-          aria-labelledby="lp-feature-title"
-        >
+        <section className="lp-features lp-container" id="features" aria-labelledby="lp-feature-title">
           <div className="lp-section-top">
             <div>
               <div className="lp-eyebrow">LESS REPETITION. MORE COMMUNITY.</div>
@@ -1004,11 +978,7 @@ export default function Landing() {
           </div>
         </section>
 
-        <section
-          className="lp-broadcast lp-container"
-          id="broadcast"
-          aria-labelledby="lp-broadcast-title"
-        >
+        <section className="lp-broadcast lp-container" id="broadcast" aria-labelledby="lp-broadcast-title">
           <div className="lp-broadcast-copy">
             <div className="lp-eyebrow">CREATE ONCE. REACH YOUR COMMUNITIES.</div>
             <h2 id="lp-broadcast-title">
@@ -1048,11 +1018,7 @@ export default function Landing() {
           <BroadcastShowcase />
         </section>
 
-        <section
-          className="lp-developers lp-container"
-          id="developers"
-          aria-labelledby="lp-dev-title"
-        >
+        <section className="lp-developers lp-container" id="developers" aria-labelledby="lp-dev-title">
           <div className="lp-dev-copy">
             <div className="lp-eyebrow">BUILT TO CONNECT</div>
             <h2 id="lp-dev-title">

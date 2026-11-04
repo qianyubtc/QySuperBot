@@ -1,41 +1,80 @@
-.qq-login-panel {
+.qq-login {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
-.qq-login-state {
-  padding: 14px;
-  background: var(--accent-soft);
-  border-radius: 8px;
+.qq-login-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
 }
-.qq-login-state p {
-  margin: 8px 0 0;
-}
-.qq-login-state small {
-  display: block;
-  margin-top: 8px;
-  color: var(--text-3);
-}
-.qq-login-qr {
-  text-align: center;
-}
-.qq-login-qr svg {
-  width: min(220px, 100%);
-  height: auto;
-  background: var(--surface);
+.qq-login-code {
+  display: grid;
+  place-items: center;
+  width: 220px;
+  height: 220px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.qq-login-qr p {
+  border-radius: var(--r-lg);
+  background: #fff;
   color: var(--text-3);
-  font-size: 13px;
 }
-.qq-login-actions {
+.qq-login-code svg:not(.lucide) {
+  width: 200px;
+  height: 200px;
+}
+.qq-login-code:not(:has(> svg:not(.lucide))) {
+  background: var(--surface-2);
+}
+.qq-login-code.ready {
+  color: var(--accent-text);
+}
+.qq-login-info {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-width: 0;
+}
+.qq-login-info strong {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.qq-login-info p {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.qq-login-ids {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-}
-.qq-login-panel > .muted {
+  gap: 6px 20px;
   margin: 0;
-  font-size: 13px;
-  line-height: 1.65;
+}
+.qq-login-ids dt {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.qq-login-ids dd {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-sm);
+}
+.qq-login-retry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.qq-login-retry .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (max-width: 560px) {
+  .qq-login-body {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .qq-login-ids,
+  .qq-login-retry {
+    justify-content: center;
+  }
 }

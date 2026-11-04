@@ -1,59 +1,195 @@
-.verification-intro {
-  padding: 24px 28px 14px;
+.verification-list {
+  container: verification / inline-size;
 }
-.verification-intro h3 {
-  margin: 0 0 10px;
+/* Inside a group's side panel the list sits in already padded space. */
+.verification-list.compact .verification-head,
+.verification-list.compact .verification-toolbar,
+.verification-list.compact .verification-empty {
+  padding-left: 0;
+  padding-right: 0;
 }
-.verification-intro p {
-  margin: 6px 0;
-  color: var(--text-3);
-  line-height: 1.65;
+.verification-list.compact > .form-error,
+.verification-list.compact > .info-box {
+  margin-left: 0;
+  margin-right: 0;
 }
-.verification-intro .btn {
-  margin-top: 10px;
+.verification-list.compact .verification-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding-top: 6px;
+}
+.verification-list.compact .verification-head h3 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.verification-list.compact .verification-head p {
+  grid-column: 1;
+  font-size: var(--fs-xs);
+}
+.verification-list.compact .verification-head .btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+.verification-list.compact .verification-rows {
+  margin-top: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.verification-list.compact .verification-row {
+  padding: 10px 12px;
+}
+.verification-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px 4px;
+}
+.verification-head p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.verification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px 6px;
+}
+.verification-toolbar .search {
+  flex: 1 1 220px;
+  max-width: 320px;
+  margin-left: auto;
 }
 .verification-list > .form-error,
 .verification-list > .info-box {
-  margin: 12px 28px;
+  margin: 12px 20px;
 }
 .verification-empty {
-  padding: 0 28px 24px;
+  padding: 8px 20px 20px;
 }
-.verification-table {
-  min-width: 960px;
-  table-layout: fixed;
+.verification-rows {
+  margin: 0;
+  padding: 4px 0 8px;
+  list-style: none;
 }
-.verification-table td {
-  vertical-align: top;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.verification-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(220px, 1.6fr) minmax(120px, 0.8fr) auto auto;
+  align-items: start;
+  gap: 6px 16px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
 }
-.verification-table th:nth-child(1) {
-  width: 16%;
+.verification-row:first-child {
+  border-top: 0;
 }
-.verification-table th:nth-child(2) {
-  width: 28%;
+.verification-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.verification-table th:nth-child(3) {
-  width: 22%;
+.verification-who > div,
+.verification-status,
+.verification-deadline {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
-.verification-table th:nth-child(4) {
-  width: 20%;
+.verification-who code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.verification-table th:nth-child(5) {
-  width: 14%;
-}
-.verification-table td small {
-  display: block;
-  max-width: 320px;
-  margin-top: 7px;
+.verification-row small {
   color: var(--text-3);
-  line-height: 1.55;
-  white-space: normal;
+  font-size: var(--fs-xs, 12px);
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.verification-table td small.error-text {
+.verification-row small.error-text {
   color: var(--danger-text);
+}
+.verification-status .verification-state {
+  justify-self: start;
+}
+.verification-deadline span {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.verification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.verification-more {
+  justify-self: end;
+}
+.verification-more > summary {
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  list-style: none;
+  padding: 3px 0;
+}
+.verification-more > summary::-webkit-details-marker {
+  display: none;
+}
+.verification-more > summary:hover,
+.verification-more[open] > summary {
+  color: var(--text);
+}
+.verification-more[open] {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+.verification-more[open] > summary {
+  text-align: right;
+}
+.verification-more dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 4px 0 0 42px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--fs-sm);
+}
+.verification-more dt {
+  color: var(--text-3);
+}
+.verification-more dd {
+  margin: 0;
+  color: var(--text-2);
+}
+.verification-receipts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+@container verification (max-width: 760px) {
+  .verification-row {
+    grid-template-columns: 1fr auto;
+  }
+  .verification-status,
+  .verification-deadline {
+    grid-column: 1 / -1;
+  }
+  .verification-deadline {
+    grid-auto-flow: column;
+    justify-content: start;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .verification-more dl {
+    margin-left: 0;
+  }
 }
 .verification-state {
   display: inline-block;
@@ -111,9 +247,4 @@
 .verification-state.timeout_in_flight {
   background: var(--info-soft);
   color: var(--info-text);
-}
-.verification-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }

@@ -68,25 +68,37 @@ body:has(.sandbox-tools) {
 body:has(.sandbox-tools) .is-inbox .main-shell {
   height: calc(100dvh - 98px);
 }
-.demo-login {
-  padding: 24px;
-  display: grid;
-  gap: 16px;
-  background: var(--accent-softer);
-  border: 1px dashed var(--border);
-  border-radius: 14px;
-}
-.demo-login .demo-login-symbol {
-  width: 100px;
-  height: 100px;
+.demo-login-symbol {
   display: grid;
   place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
   background: var(--accent-soft);
-  border-radius: 20px;
-  font-size: 42px;
+  color: var(--accent-text);
+  font-size: 28px;
+  font-weight: 700;
 }
-.demo-login small {
-  color: var(--text-2);
+.qq-login-code.demo-login-code {
+  background: var(--surface-2);
+}
+.binance-login-screen.demo-login-screen {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  min-height: 300px;
+  padding: 32px 24px;
+  color: var(--accent-text);
+  text-align: center;
+}
+.demo-login-screen strong {
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+.demo-login-screen p {
+  max-width: 420px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
 }
 @media (max-width: 760px) {
   body:has(.sandbox-tools) {

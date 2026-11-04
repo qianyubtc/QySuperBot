@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { AccountsService } from './accounts.ts';
 import { telegramEvents } from './adapters.ts';
 import type { Context } from './context.ts';
@@ -11,12 +10,15 @@ import { ApiError } from './security.ts';
 import type { Row } from './database.ts';
 import { beginBinanceCheck, recordBinanceSuccess } from './binance-health.ts';
 import type { MemberManagement } from './member-management.ts';
+import { log } from './log.ts';
 
 // Permission snapshots expire after five minutes. Full discovery re-reads every group's
 // permissions (for QQ, each group's member list), so it runs well inside that window instead of
 // on every maintenance cycle; QQ login loss is still checked every cycle.
 const permissionRefreshMs = 180_000;
 const fullRefreshesPerCycle = 20;
+/** Jobs of different accounts run side by side; each account still runs its jobs in order. */
+const concurrentAccounts = 4;
 
 export class Worker {
   ctx: Context;
@@ -30,6 +32,12 @@ export class Worker {
   busyMaintenance = false;
   stopped = false;
   enrichedBinanceSessions = new Map<string, string>();
+  telegramLoops = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  /** Set once started: Telegram is then read only by the per-bot long-poll loops. */
+  longPolling = false;
+  housekeptAt = 0;
+  /** Account id → the job currently executing for it. */
+  runningJobs = new Map<string, Promise<void>>();
   constructor(
     ctx: Context,
     accounts: AccountsService,
@@ -46,28 +54,47 @@ export class Worker {
   }
   async start() {
     await this.jobs.recover();
+    this.longPolling = true;
     this.timers.push(setInterval(() => void this.dispatch(), 800));
     this.timers.push(setInterval(() => void this.poll(), 3000));
     this.timers.push(setInterval(() => void this.maintenance(), 30_000));
+    this.timers.push(setInterval(() => void this.syncTelegramLoops(), 5000));
+    void this.syncTelegramLoops();
     void this.dispatch();
   }
   stop() {
     this.stopped = true;
     this.timers.forEach((timer) => clearInterval(timer));
+    for (const loop of this.telegramLoops.values()) loop.controller.abort();
   }
   async drain() {
     this.stop();
+    await Promise.allSettled([...this.telegramLoops.values()].map((loop) => loop.done));
     while (this.busyJobs || this.busyPoll || this.busyMaintenance)
       await new Promise((resolve) => setTimeout(resolve, 50));
+    await Promise.allSettled(this.runningJobs.values());
   }
-  private async dispatch() {
+  private async dispatch(sweep = true) {
     if (this.stopped || this.busyJobs) return;
     this.busyJobs = true;
     try {
-      await this.messages.qqVerification.sweep();
-      for (let i = 0; i < 8 && !this.stopped; i++) if (!(await this.jobs.processOnce())) break;
-    } catch {
-      console.error('任务处理失败，已保留持久任务供后续检查');
+      if (sweep) await this.messages.qqVerification.sweep();
+      // A slow platform (a NapCat timeout, say) now holds up only its own account's queue.
+      while (!this.stopped && this.runningJobs.size < concurrentAccounts) {
+        const next = await this.jobs.claim([...this.runningJobs.keys()]);
+        if (!next) break;
+        const running = next
+          .run()
+          .catch((error) => log.error('job run failed', { account: next.accountId, error }))
+          .finally(() => {
+            this.runningJobs.delete(next.accountId);
+            // Pick up the next job straight away rather than on the next tick.
+            if (!this.stopped) void this.dispatch(false);
+          });
+        this.runningJobs.set(next.accountId, running);
+      }
+    } catch (error) {
+      log.error('job dispatch failed; durable jobs are kept for the next cycle', { error });
     } finally {
       this.busyJobs = false;
     }
@@ -76,98 +103,17 @@ export class Worker {
     if (this.stopped || this.busyPoll) return;
     this.busyPoll = true;
     try {
-      const accounts = await this.ctx.db.query(
-        "SELECT * FROM accounts WHERE kind='telegram' AND status IN ('online','error') AND external_id IS NOT NULL",
-      );
-      for (const account of accounts) {
-        if (this.stopped) break;
-        try {
-          const response = await this.ctx.adapters.telegram(account, 'getUpdates', {
-            offset: Number(account.cursor ?? 0),
-            timeout: 0,
-            limit: 50,
-            allowed_updates: [
-              'message',
-              'edited_message',
-              'channel_post',
-              'edited_channel_post',
-              'callback_query',
-              'my_chat_member',
-            ],
-          });
-          if (!response.data.ok) {
-            await this.ctx.db.query(
-              "UPDATE accounts SET status='error',last_error=$2 WHERE id=$1 AND status<>'paused'",
-              [
-                account.id,
-                response.data.error_code === 409
-                  ? 'Telegram 接收冲突：请检查是否配置了 Webhook，或有其他程序同时轮询此机器人'
-                  : 'Telegram 暂时无法读取消息',
-              ],
-            );
-            continue;
-          }
-          for (const update of response.data.result) {
-            try {
-              const callback = update.callback_query;
-              if (callback)
-                await this.ctx.adapters.telegram(account, 'answerCallbackQuery', {
-                  callback_query_id: callback.id,
-                });
-              const events = telegramEvents(account, update);
-              const chat =
-                update.message?.chat ??
-                update.edited_message?.chat ??
-                update.channel_post?.chat ??
-                update.my_chat_member?.chat ??
-                callback?.message?.chat;
-              if (chat && ['group', 'supergroup', 'channel'].includes(chat.type)) {
-                const known = (
-                  await this.ctx.db.query(
-                    'SELECT account_id FROM bindings WHERE account_id=$1 AND external_id=$2',
-                    [account.id, String(chat.id)],
-                  )
-                ).length;
-                if (!known)
-                  await this.accounts.upsertGroup(
-                    account,
-                    await this.ctx.adapters.telegramGroup(account, String(chat.id)),
-                  );
-              }
-              for (const item of events)
-                await this.messages.ingest(account, item.event, item.name, false, item.presentation);
-              await this.members?.handleUpdate(account, update);
-            } catch {
-              // Isolate poison updates without losing them or blocking all following group events.
-              await this.ctx.db.query(
-                'INSERT INTO metadata(key,value) VALUES($1,$2::jsonb) ON CONFLICT DO NOTHING',
-                [
-                  `quarantine:${account.id}:${update.update_id}`,
-                  json({ update, received_at: new Date().toISOString() }),
-                ],
-              );
-              await audit(this.ctx.db, '连接器', 'event.quarantined', account.id, {
-                update_id: update.update_id,
-              });
-            }
-            await this.ctx.db.query('UPDATE accounts SET cursor=$2 WHERE id=$1', [
-              account.id,
-              String(Number(update.update_id) + 1),
-            ]);
-          }
-          // Polling runs every few seconds; only persist a status change or a coarse last-seen time.
-          await this.ctx.db.query(
-            `UPDATE accounts SET status='online',last_seen_at=now(),last_error=NULL WHERE id=$1 AND status<>'paused'
-            AND (status<>'online' OR last_error IS NOT NULL OR last_seen_at IS NULL OR last_seen_at<now()-interval '30 seconds')`,
-            [account.id],
+      const accounts = this.longPolling
+        ? []
+        : await this.ctx.db.query(
+            "SELECT * FROM accounts WHERE kind='telegram' AND status IN ('online','error') AND external_id IS NOT NULL",
           );
-        } catch {
-          await this.ctx.db.query(
-            "UPDATE accounts SET status='error',last_error='Telegram 连接暂不可用' WHERE id=$1 AND status<>'paused'",
-            [account.id],
-          );
+      // A running worker reads Telegram in its long-poll loops; a second getUpdates would conflict.
+      if (!this.longPolling)
+        for (const account of accounts) {
+          if (this.stopped) break;
+          await this.pollTelegram(account);
         }
-      }
       const binance = await this.ctx.db.query(
         "SELECT * FROM accounts WHERE kind='binance' AND status='online'",
       );
@@ -177,6 +123,7 @@ export class Worker {
           await this.pollBinance(account);
         } catch (error) {
           if ((error as { staleConnection?: boolean })?.staleConnection) continue;
+          log.warn('binance poll failed', { account: account.id, error });
           await this.ctx.db.query(
             "UPDATE accounts SET status='error',last_error=$3 WHERE id=$1 AND session_id=$2 AND status='online'",
             [
@@ -187,10 +134,160 @@ export class Worker {
           );
         }
       }
-    } catch {
-      console.error('消息轮询暂未完成，下一周期将重试');
+    } catch (error) {
+      log.error('message polling failed; retrying next cycle', { error });
     } finally {
       this.busyPoll = false;
+    }
+  }
+  /** Reads one batch of Telegram updates; `wait` > 0 holds the request open (long polling). */
+  async pollTelegram(account: Row, wait = 0, signal?: AbortSignal): Promise<boolean> {
+    try {
+      const response = await this.ctx.adapters.telegram(
+        account,
+        'getUpdates',
+        {
+          offset: Number(account.cursor ?? 0),
+          timeout: wait,
+          limit: 50,
+          allowed_updates: [
+            'message',
+            'edited_message',
+            'channel_post',
+            'edited_channel_post',
+            'callback_query',
+            'my_chat_member',
+          ],
+        },
+        undefined,
+        { timeoutMs: (wait + 10) * 1000, signal },
+      );
+      if (!response.data.ok) {
+        await this.ctx.db.query(
+          "UPDATE accounts SET status='error',last_error=$2 WHERE id=$1 AND status<>'paused'",
+          [
+            account.id,
+            response.data.error_code === 409
+              ? 'Telegram 接收冲突：请检查是否配置了 Webhook，或有其他程序同时轮询此机器人'
+              : 'Telegram 暂时无法读取消息',
+          ],
+        );
+        return false;
+      }
+      for (const update of response.data.result) {
+        if (signal?.aborted) return true;
+        try {
+          const callback = update.callback_query;
+          if (callback)
+            await this.ctx.adapters.telegram(account, 'answerCallbackQuery', {
+              callback_query_id: callback.id,
+            });
+          const events = telegramEvents(account, update);
+          const chat =
+            update.message?.chat ??
+            update.edited_message?.chat ??
+            update.channel_post?.chat ??
+            update.my_chat_member?.chat ??
+            callback?.message?.chat;
+          if (chat && ['group', 'supergroup', 'channel'].includes(chat.type)) {
+            const known = (
+              await this.ctx.db.query(
+                'SELECT account_id FROM bindings WHERE account_id=$1 AND external_id=$2',
+                [account.id, String(chat.id)],
+              )
+            ).length;
+            if (!known)
+              await this.accounts.upsertGroup(
+                account,
+                await this.ctx.adapters.telegramGroup(account, String(chat.id)),
+              );
+          }
+          for (const item of events)
+            await this.messages.ingest(account, item.event, item.name, false, item.presentation);
+          await this.members?.handleUpdate(account, update);
+        } catch (error) {
+          log.warn('telegram update quarantined', {
+            account: account.id,
+            update: update.update_id,
+            error,
+          });
+          // Isolate poison updates without losing them or blocking all following group events.
+          await this.ctx.db.query(
+            'INSERT INTO metadata(key,value) VALUES($1,$2::jsonb) ON CONFLICT DO NOTHING',
+            [
+              `quarantine:${account.id}:${update.update_id}`,
+              json({ update, received_at: new Date().toISOString() }),
+            ],
+          );
+          await audit(this.ctx.db, '连接器', 'event.quarantined', account.id, {
+            update_id: update.update_id,
+          });
+        }
+        await this.ctx.db.query('UPDATE accounts SET cursor=$2 WHERE id=$1', [
+          account.id,
+          String(Number(update.update_id) + 1),
+        ]);
+      }
+      // Polling runs every few seconds; only persist a status change or a coarse last-seen time.
+      await this.ctx.db.query(
+        `UPDATE accounts SET status='online',last_seen_at=now(),last_error=NULL WHERE id=$1 AND status<>'paused'
+        AND (status<>'online' OR last_error IS NOT NULL OR last_seen_at IS NULL OR last_seen_at<now()-interval '30 seconds')`,
+        [account.id],
+      );
+      return true;
+    } catch (error) {
+      // Shutting down or stopping the loop aborts the long poll; that is not a connection failure.
+      if (signal?.aborted) return false;
+      log.warn('telegram poll failed', { account: account.id, error });
+      await this.ctx.db.query(
+        "UPDATE accounts SET status='error',last_error='Telegram 连接暂不可用' WHERE id=$1 AND status<>'paused'",
+        [account.id],
+      );
+    }
+    return false;
+  }
+  /** Keeps one long-poll loop per connected Telegram bot, so new messages arrive within moments. */
+  private async syncTelegramLoops() {
+    if (this.stopped) return;
+    let ids: string[];
+    try {
+      ids = (
+        await this.ctx.db.query(
+          "SELECT id FROM accounts WHERE kind='telegram' AND status IN ('online','error') AND external_id IS NOT NULL",
+        )
+      ).map((row) => row.id);
+    } catch (error) {
+      log.warn('telegram loop sync failed', { error });
+      return;
+    }
+    for (const [id, loop] of this.telegramLoops) if (!ids.includes(id)) loop.controller.abort();
+    for (const id of ids) {
+      if (this.telegramLoops.has(id) || this.stopped) continue;
+      const controller = new AbortController();
+      const loop = { controller, done: this.telegramLoop(id, controller.signal) };
+      this.telegramLoops.set(id, loop);
+      void loop.done.finally(() => {
+        if (this.telegramLoops.get(id) === loop) this.telegramLoops.delete(id);
+      });
+    }
+  }
+  private async telegramLoop(id: string, signal: AbortSignal) {
+    const pause = (ms: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, ms);
+        signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true });
+      });
+    while (!signal.aborted && !this.stopped) {
+      try {
+        const account = (await this.ctx.db.query('SELECT * FROM accounts WHERE id=$1', [id]))[0];
+        if (!account || !['online', 'error'].includes(account.status) || !account.external_id) return;
+        // A healthy bot waits on Telegram; one in error retries a quick read every few seconds.
+        const ok = await this.pollTelegram(account, account.status === 'online' ? 25 : 0, signal);
+        if (!ok || account.status !== 'online') await pause(3000);
+      } catch (error) {
+        log.warn('telegram loop iteration failed', { account: id, error });
+        await pause(3000);
+      }
     }
   }
   async pollBinance(account: Row) {
@@ -288,6 +385,27 @@ export class Worker {
     if (account.settings.group_ids.length)
       await recordBinanceSuccess(this.ctx.db, account, 'sync', undefined, started);
   }
+  /**
+   * Hourly retention. Raw inbound events only back idempotency and diagnostics, so 30 days is
+   * ample; uploaded images that nothing references any more are removed after a week.
+   */
+  async housekeeping() {
+    this.housekeptAt = Date.now();
+    const events = await this.ctx.db.query(
+      "DELETE FROM inbox WHERE id IN (SELECT id FROM inbox WHERE received_at < now() - interval '30 days' LIMIT 5000) RETURNING id",
+    );
+    const images = await this.ctx.db.query(
+      `DELETE FROM uploaded_images u WHERE u.created_at < now() - interval '7 days'
+        AND NOT EXISTS (SELECT 1 FROM announcements a WHERE a.image_asset_id=u.id)
+        AND NOT EXISTS (SELECT 1 FROM keyword_rules k WHERE k.image_asset_id=u.id)
+        AND NOT EXISTS (SELECT 1 FROM message_templates t WHERE t.image_asset_id=u.id)
+        AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.params::text LIKE '%' || u.id || '%')
+        AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.media @> jsonb_build_array(jsonb_build_object('asset_id', u.id)))
+      RETURNING u.id`,
+    );
+    if (events.length || images.length)
+      log.info('housekeeping removed old data', { inbox_events: events.length, images: images.length });
+  }
   private async maintenance() {
     if (this.stopped || this.busyMaintenance) return;
     this.busyMaintenance = true;
@@ -302,6 +420,7 @@ export class Worker {
       await this.ctx.db.query('DELETE FROM sessions WHERE expires_at<now()');
       await this.ctx.db.query('DELETE FROM nonces WHERE expires_at<now()');
       await this.ctx.db.query('DELETE FROM login_limits WHERE expires_at<now()');
+      if (Date.now() - this.housekeptAt >= 3600_000) await this.housekeeping();
       const due = await this.ctx.db.query(
         "SELECT id FROM lotteries WHERE status='open' AND closes_at<=now() LIMIT 10",
       );
@@ -326,12 +445,12 @@ export class Worker {
             await this.accounts.refresh(account.id, '定时刷新', false, { audit: false });
           else if (account.kind === 'qq' && account.status === 'online')
             await this.accounts.checkQQLogin(account.id);
-        } catch {
-          /* visible in the account's last_error */
+        } catch (error) {
+          log.warn('scheduled account check failed', { account: account.id, error });
         }
       }
-    } catch {
-      console.error('维护任务未完成，下一周期将重试');
+    } catch (error) {
+      log.error('maintenance failed; retrying next cycle', { error });
     } finally {
       this.busyMaintenance = false;
     }

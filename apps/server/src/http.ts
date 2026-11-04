@@ -17,6 +17,7 @@ import { ChatService } from './chat.ts';
 import { BinanceBridge } from './binance.ts';
 import { BinanceBrowser, browserSocketPath } from './binance-browser.ts';
 import { verificationRows } from './qq-verification.ts';
+import { log } from './log.ts';
 
 const SERVICE = Symbol('services');
 @Catch()
@@ -33,7 +34,7 @@ class Errors implements ExceptionFilter {
       });
     const known = error instanceof ApiError || error instanceof ProtocolError;
     const status = known ? error.status : error.statusCode === 413 ? 413 : (error.getStatus?.() ?? 500);
-    if (status >= 500) console.error('API 请求失败', { type: error.name, code: error.code });
+    if (status >= 500) log.error('api request failed', { error });
     response.status(status).json({
       error: {
         code: known ? error.code : 'REQUEST_FAILED',
@@ -112,7 +113,9 @@ class ApiController {
     if (method === 'GET' && path === '/auth/state') return s.auth.state();
     if (method === 'POST' && ['/auth/setup', '/auth/login'].includes(path)) {
       const session =
-        path === '/auth/setup' ? await s.auth.setup(body) : await s.auth.login(body, req.ip ?? 'unknown');
+        path === '/auth/setup'
+          ? await s.auth.setup(body, req.ip ?? 'unknown')
+          : await s.auth.login(body, req.ip ?? 'unknown');
       res.cookie('qsb_session', session.token, {
         httpOnly: true,
         sameSite: 'strict',

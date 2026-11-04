@@ -3,7 +3,7 @@ import pg from 'pg';
 import { mkdir, open, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Config } from './config.ts';
-import { migration } from './migration.ts';
+import { migrate } from './migration.ts';
 
 export type Row = Record<string, any>;
 export interface Sql {
@@ -41,7 +41,18 @@ export async function openDatabase(config: Pick<Config, 'databaseUrl' | 'dataDir
   if (config.databaseUrl) {
     const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 8 });
     try {
-      await pool.query(migration);
+      const client = await pool.connect();
+      try {
+        await migrate(
+          {
+            exec: (sql) => client.query(sql),
+            query: async (sql, values) => (await client.query(sql, values)).rows,
+          },
+          { lock: true },
+        );
+      } finally {
+        client.release();
+      }
     } catch (error) {
       await pool.end();
       throw error;
@@ -106,7 +117,11 @@ export async function openDatabase(config: Pick<Config, 'databaseUrl' | 'dataDir
     startingDatabase = await PGlite.create(
       config.dataDir === 'memory://' ? 'memory://' : join(config.dataDir, 'postgres'),
     );
-    await startingDatabase.exec(migration);
+    const local = startingDatabase;
+    await migrate({
+      exec: (sql) => local.exec(sql),
+      query: async (sql, values) => (await local.query<{ version: number }>(sql, values)).rows,
+    });
   } catch (error) {
     try {
       await startingDatabase?.close();

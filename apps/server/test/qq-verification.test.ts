@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { createServices } from '../src/services.ts';
 import { loadConfig } from '../src/config.ts';
 import { SecretBox } from '../src/security.ts';
@@ -866,7 +866,6 @@ test('QQ ad edits preserve a pending verification, while verification setting ch
   try {
     await f.join();
     await f.drain();
-    const initial = await f.current();
     const answer = await f.solution();
     let group = await f.s.features.group(f.group.id);
     await f.s.features.policy(f.group.id, { ...group.policy, keywords: ['fixture-ad'] }, 'test');

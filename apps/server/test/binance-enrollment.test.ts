@@ -7,7 +7,7 @@ import { WebSocket } from 'ws';
 import { loadConfig } from '../src/config.ts';
 import { createServices } from '../src/services.ts';
 import { createHttpApp } from '../src/http.ts';
-import { SecretBox, sha } from '../src/security.ts';
+import { SecretBox } from '../src/security.ts';
 import { BinanceDirect } from '../src/binance-direct.ts';
 import { enrollmentProof } from '../src/binance-enrollment.ts';
 

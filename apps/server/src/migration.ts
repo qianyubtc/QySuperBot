@@ -176,3 +176,57 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 INSERT INTO metadata(key,value) VALUES ('schema_version','1') ON CONFLICT DO NOTHING;
 `;
+
+/**
+ * Changes that must run exactly once, in order, after the idempotent baseline above.
+ * Append new entries; never edit or reorder applied ones.
+ */
+export const migrations: { version: number; name: string; sql: string }[] = [
+  {
+    version: 2,
+    name: 'retention indexes and refresh audit cleanup',
+    sql: `
+CREATE INDEX IF NOT EXISTS messages_created_at ON messages(created_at);
+CREATE INDEX IF NOT EXISTS messages_blocked ON messages(conversation_id) WHERE verdict='blocked';
+CREATE INDEX IF NOT EXISTS inbox_received ON inbox(received_at);
+CREATE INDEX IF NOT EXISTS audit_created ON audit(created_at DESC);
+-- Scheduled refreshes used to write an audit row every 30 seconds per account.
+DELETE FROM audit WHERE action='account.refreshed' AND actor='定时刷新';
+`,
+  },
+];
+
+export interface MigrationConnection {
+  exec(sql: string): Promise<unknown>;
+  query(sql: string, values?: unknown[]): Promise<{ version: number }[]>;
+}
+/** Applies the baseline, then each pending migration in its own transaction on one connection. */
+export async function migrate(db: MigrationConnection, options: { lock?: boolean } = {}) {
+  if (options.lock) await db.exec('SELECT pg_advisory_lock(7219031)');
+  try {
+    await db.exec(migration);
+    await db.exec(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (version integer PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
+    );
+    const applied = new Set(
+      (await db.query('SELECT version FROM schema_migrations')).map((row) => Number(row.version)),
+    );
+    for (const step of migrations) {
+      if (applied.has(step.version)) continue;
+      await db.exec('BEGIN');
+      try {
+        await db.exec(step.sql);
+        await db.query('INSERT INTO schema_migrations(version,name) VALUES($1,$2)', [
+          step.version,
+          step.name,
+        ]);
+        await db.exec('COMMIT');
+      } catch (error) {
+        await db.exec('ROLLBACK');
+        throw error;
+      }
+    }
+  } finally {
+    if (options.lock) await db.exec('SELECT pg_advisory_unlock(7219031)');
+  }
+}

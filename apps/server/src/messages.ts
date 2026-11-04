@@ -8,7 +8,7 @@ import {
 } from '../../../packages/contracts/src/index.ts';
 import type { ConnectorEvent } from '../../../packages/contracts/src/index.ts';
 import type { Context } from './context.ts';
-import { audit, epoch, iso, json } from './context.ts';
+import { audit, epoch, json } from './context.ts';
 import type { Row, Sql } from './database.ts';
 import { JobsService } from './jobs.ts';
 import { ApiError, equal, sha } from './security.ts';

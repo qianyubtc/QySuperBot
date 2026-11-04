@@ -555,7 +555,11 @@ test('joined room discovery paginates normal and archived groups; selections cha
   await s.accounts.selectBinanceGroups(account.id, { group_ids: [], revision: restored.revision }, 'test');
   assert.equal((await s.accounts.get(account.id)).status, 'online');
   const empty = await s.accounts.binanceGroups(account.id);
-  await s.accounts.selectBinanceGroups(account.id, { group_ids: ['10001'], revision: empty.revision }, 'test');
+  await s.accounts.selectBinanceGroups(
+    account.id,
+    { group_ids: ['10001'], revision: empty.revision },
+    'test',
+  );
   account = await s.accounts.get(account.id);
 });
 

@@ -11,104 +11,57 @@
 .account-refresh-state.has-error {
   color: var(--danger-text);
 }
-.binance-connection {
-  margin-top: 18px;
-  border: 1px solid var(--warning);
-  border-radius: 10px;
-  background: var(--warning-soft);
-  padding: 14px;
-  color: var(--warning-text);
-}
-.binance-connection.healthy {
-  border-color: var(--border);
-  background: var(--accent-softer);
-  color: var(--text-2);
-}
 .binance-connection.needs-login {
-  border-color: var(--danger);
   background: var(--danger-soft);
+}
+.binance-connection.needs-login > svg,
+.binance-connection.needs-login p {
   color: var(--danger-text);
 }
-.binance-connection-summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
+.binance-connection > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
-.binance-connection-summary > svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.binance-connection-summary strong {
-  font-size: 13px;
-  line-height: 1.5;
-}
-.binance-connection-summary p {
-  margin: 5px 0 0;
-  font-size: 12px;
-  line-height: 1.8;
-}
-.binance-connection-summary small {
-  display: block;
-  margin-top: 6px;
-  font-size: 12px;
-}
-.binance-connection-times {
-  border-top: 1px solid var(--warning);
-  margin-top: 12px;
-  padding-top: 8px;
-}
-.binance-connection-times > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 5px 0;
-  font-size: 12px;
-  line-height: 1.6;
-}
-.binance-connection-times > div > :first-child {
-  flex-shrink: 0;
-  opacity: 0.8;
-}
-.binance-connection-times > div > :last-child {
-  text-align: right;
+.binance-connection p {
   overflow-wrap: anywhere;
 }
 .binance-relogin-hint {
-  margin: 10px 0 0;
-  font-size: 12px;
-  line-height: 1.8;
+  font-weight: 500;
+}
+.binance-connection-times {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.binance-connection-times div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.binance-connection-times dt {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.binance-connection-times dd {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .binance-connection-detail {
-  margin-top: 10px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
 }
 .binance-connection-detail summary {
   cursor: pointer;
-}
-.binance-connection-detail p {
-  margin: 8px 0 0;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
-}
-.binance-login-guide {
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--text-2);
-  font-size: 12px;
-  line-height: 1.8;
-  margin-bottom: 12px;
-}
-.binance-login-guide p {
-  margin: 4px 0 0;
+  color: inherit;
 }
 .inbox-room-connection {
   color: var(--danger-text);
   font-weight: 600;
-}
-@media (max-width: 760px) {
-  .binance-connection-times > div {
-    flex-wrap: wrap;
-    gap: 2px 8px;
-  }
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Database, Row } from './database.ts';
+import type { Database } from './database.ts';
 import type { Config } from './config.ts';
 import { ApiError, checkPassword, equal, hashPassword, sha, token } from './security.ts';
 import { credentialsInput, setupInput } from './inputs.ts';
@@ -22,11 +22,20 @@ export class AuthService {
     const exists = (await this.db.query('SELECT id FROM admins LIMIT 1')).length > 0;
     return { setup_required: !exists, setup_token_required: !!this.config.setupToken };
   }
-  async setup(input: unknown) {
+  /**
+   * `address` is the client address resolved through the trusted proxy setting. Without a setup
+   * token, only a request made directly on this machine may create the first administrator: a
+   * server bound to 127.0.0.1 behind a reverse proxy still receives public requests.
+   */
+  async setup(input: unknown, address = '127.0.0.1') {
     const value = setupInput.parse(input);
     if (this.config.setupToken && !equal(value.setup_token ?? '', this.config.setupToken))
       throw new ApiError(403, 'SETUP_TOKEN_REQUIRED', '初始化凭据不正确');
-    if (!['127.0.0.1', 'localhost', '::1'].includes(this.config.host) && !this.config.setupToken) {
+    const local =
+      ['127.0.0.1', 'localhost', '::1'].includes(this.config.host) &&
+      ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address) &&
+      process.env.NODE_ENV !== 'production';
+    if (!this.config.setupToken && !local) {
       throw new ApiError(403, 'SETUP_NOT_CONFIGURED', '请先在服务器配置 ADMIN_SETUP_TOKEN，再创建管理员');
     }
     const id = randomUUID();

@@ -12,7 +12,8 @@ const memberSql = (where: string) => `
     SELECT sender_id AS user_id, count(*)::int AS message_count, max(created_at) AS last_message_at,
       count(*) FILTER (WHERE verdict IN ('blocked','observed'))::int AS flagged_count,
       (array_agg(sender_name ORDER BY created_at DESC))[1] AS last_name,
-      (array_agg(sender_avatar ORDER BY created_at DESC) FILTER (WHERE sender_avatar IS NOT NULL))[1] AS last_avatar
+      (array_agg(sender_avatar ORDER BY created_at DESC) FILTER (WHERE sender_avatar IS NOT NULL))[1] AS last_avatar,
+      (array_agg(id ORDER BY created_at DESC) FILTER (WHERE NOT deleted))[1] AS last_message_id
     FROM messages WHERE conversation_id=$1 AND direction='incoming' GROUP BY sender_id
   ), people AS (
     SELECT user_id FROM speakers
@@ -24,6 +25,7 @@ const memberSql = (where: string) => `
   SELECT p.user_id,
     COALESCE(sp.sender_name, s.last_name, p.user_id) AS name,
     COALESCE(sp.sender_avatar, s.last_avatar) AS avatar,
+    s.last_message_id AS avatar_message_id,
     COALESCE(s.message_count, 0) AS message_count,
     s.last_message_at,
     COALESCE(s.flagged_count, 0) AS flagged_count,

@@ -850,7 +850,11 @@ test('history uses the official 20-row page and preserves scope, large IDs and i
       });
     },
     '',
-    { operation: 'history', params: { group_id: '10001', min_id: '90071992547409932' }, group_ids: ['10001'] },
+    {
+      operation: 'history',
+      params: { group_id: '10001', min_id: '90071992547409932' },
+      group_ids: ['10001'],
+    },
   );
   assert.equal(result.ok, true);
   assert.equal(requested.rows, 20);
@@ -1037,7 +1041,11 @@ test('browser and server agree on nullable member status, current roles and expl
         return apiResponse({ success: true, data });
       },
       '',
-      { operation: 'send_check', params: { group_id: '10001', expected_user_id: '123' }, group_ids: ['10001'] },
+      {
+        operation: 'send_check',
+        params: { group_id: '10001', expected_user_id: '123' },
+        group_ids: ['10001'],
+      },
       { WebSocket: Socket, setInterval: () => 0, clearInterval() {} },
     );
     assert.equal(result.ok, expected === 'granted');

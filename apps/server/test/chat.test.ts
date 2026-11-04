@@ -354,9 +354,10 @@ test('reconnecting snapshots cover missed messages and sidebar activity in other
     action: 'message.send',
     params: { segments: [{ type: 'text', text: '离线时没有发出的旧消息' }] },
   });
-  await s.db.query("UPDATE jobs SET status='failed',last_error='账号未在线，请恢复连接后再重试' WHERE id=$1", [
-    failed.id,
-  ]);
+  await s.db.query(
+    "UPDATE jobs SET status='failed',last_error='账号未在线，请恢复连接后再重试' WHERE id=$1",
+    [failed.id],
+  );
   const stream = await openStream();
   try {
     const { data } = await stream.next((event) => event === 'chat.snapshot');

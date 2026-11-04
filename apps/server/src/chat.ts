@@ -22,7 +22,9 @@ const messageFields = `m.id,m.external_id,m.sender_id,m.sender_name,m.segments,l
 
 // Tables a chat snapshot reads. A stream recomputes only after one of them changes, or when
 // time-based state (expired permissions, sessions or retry windows) may have moved on.
-const snapshotTables = ['messages', 'jobs', 'conversations', 'accounts', 'bindings', 'metadata'] as const;
+// Binance health in metadata is written on every 3-second sync; it is picked up by the periodic
+// refresh, while login failures also change the account row and appear at once.
+const snapshotTables = ['messages', 'jobs', 'conversations', 'accounts', 'bindings'] as const;
 const snapshotRefreshMs = 10_000;
 
 // Each snapshot is one SQL statement so messages and their delivery outcomes share a database snapshot.
@@ -58,7 +60,7 @@ export class ChatService {
         WHERE m.conversation_id=c.id ORDER BY m.created_at DESC,m.id DESC LIMIT 100
       ) m),'[]'::jsonb) AS messages,
       COALESCE((SELECT jsonb_agg(to_jsonb(j) ORDER BY j.created_at,j.id) FROM (
-        SELECT id,status,created_at,updated_at,last_error,params->>'reply_to' AS reply_to,
+        SELECT id,status,created_at,updated_at,due_at,last_error,params->>'reply_to' AS reply_to,
           COALESCE(left(params->'segments'->0->>'text',8000),'[图片]') AS content,
           params->'segments'->-1->>'asset_id' AS image_asset_id,
           status='failed' AND COALESCE((receipt->'error'->>'retryable')::boolean,false) AND expires_at>now()

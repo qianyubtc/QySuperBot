@@ -13,7 +13,7 @@ import type { Row, Sql } from './database.ts';
 import type { Context } from './context.ts';
 import { audit, epoch, json } from './context.ts';
 import { accountInput, defaultPolicy } from './inputs.ts';
-import { ApiError, equal, sha, token } from './security.ts';
+import { ApiError, sha, token } from './security.ts';
 import { groupSnapshot, qqSucceeded } from './adapters.ts';
 import { binanceGroupId } from './binance.ts';
 import type { GroupSnapshot } from './adapters.ts';

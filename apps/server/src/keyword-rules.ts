@@ -163,7 +163,7 @@ export class KeywordRules {
       const initial = await this.context(id, tx);
       await tx.query('SELECT id FROM accounts WHERE id=$1 FOR SHARE', [initial.account.id]);
       await tx.query('SELECT id FROM conversations WHERE id=$1 FOR UPDATE', [id]);
-      const { group, account, availability } = await this.context(id, tx);
+      const { account, availability } = await this.context(id, tx);
       if (account.id !== initial.account.id)
         throw new ApiError(409, 'EXECUTOR_CHANGED', '执行账号已变化，请刷新');
       if (value.enabled && value.mode === 'enforce') {

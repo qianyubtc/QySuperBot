@@ -164,6 +164,18 @@ const states: Record<string, string> = {
   unknown: '结果待核对',
   cancelled: '已取消',
 };
+/** A broadcast scheduled for later shows when it will go out instead of a bare "queued". */
+const deliveryState = (job: Data) =>
+  job.status === 'pending' && job.due_at && Date.parse(job.due_at) > Date.now() + 60_000
+    ? `定时 ${new Date(job.due_at).toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Shanghai',
+      })}`
+    : (states[job.status] ?? job.status);
 const platformName = (group: Data) =>
   group.is_demo
     ? '本地演示'
@@ -1325,7 +1337,7 @@ export default function Inbox({
                               ) : (
                                 <CircleAlert size={12} />
                               )}{' '}
-                              {states[job.status] ?? job.status}
+                              {deliveryState(job)}
                             </span>
                             {job.status === 'unknown' && (
                               <Link className="chat-reply" to={`/announcements?delivery=${job.id}`}>

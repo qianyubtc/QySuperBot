@@ -1,6 +1,10 @@
 import { loadConfig } from './config.ts';
 import { createServices } from './services.ts';
 import { createHttpApp } from './http.ts';
+import { log } from './log.ts';
+
+// A stray rejection is logged instead of crashing the process; durable jobs recover on their own.
+process.on('unhandledRejection', (error) => log.error('unhandled rejection', { error }));
 
 const config = loadConfig();
 const services = await createServices(config);

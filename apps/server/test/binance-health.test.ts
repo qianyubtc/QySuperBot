@@ -314,7 +314,14 @@ test('old requests and deselected groups cannot expire or clear a newer login; s
     );
     assert.equal((await f.get()).status, 'online');
     const current = await f.get();
-    await recordBinanceFailure(f.s.db, current, 'history', '10001', base + 200, problem('NETWORK', 'history'));
+    await recordBinanceFailure(
+      f.s.db,
+      current,
+      'history',
+      '10001',
+      base + 200,
+      problem('NETWORK', 'history'),
+    );
     await recordBinanceSuccess(f.s.db, current, 'history', '10001', base + 100);
     assert.equal((await f.public()).connection.state, 'temporary_error');
     await f.s.db.query(
@@ -344,7 +351,14 @@ test('a late old failure cannot replace a newer successful check or a newer veri
     const account = await f.get(),
       base = Date.now() + 1000;
     await recordBinanceSuccess(f.s.db, account, 'history', '10001', base + 200);
-    await recordBinanceFailure(f.s.db, account, 'history', '10001', base + 100, problem('NETWORK', 'history'));
+    await recordBinanceFailure(
+      f.s.db,
+      account,
+      'history',
+      '10001',
+      base + 100,
+      problem('NETWORK', 'history'),
+    );
     assert.equal((await f.public()).connection.state, 'connected');
     await recordBinanceSuccess(f.s.db, account, 'profile', undefined, base + 400);
     await recordBinanceFailure(

@@ -17,7 +17,6 @@ let s: Services;
 let source: string;
 let target: string;
 let account: any;
-const admin = { kind: 'admin' as const, id: 'admin', name: '测试管理员', csrf: '' };
 before(async () => {
   s = await createServices(
     { ...loadConfig(), dataDir: 'memory://', databaseUrl: undefined, seedDemo: true },

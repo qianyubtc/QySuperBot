@@ -9,6 +9,23 @@ const normalizeKeyword = (text: string) =>
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .toLowerCase()
     .trim();
+const verificationLabels: Record<string, string> = {
+  pending: '等待成员验证',
+  failed: '回答次数已达上限',
+  expired: '已超时，等待处理',
+  manual_review: '等待人工处理',
+  passed: '已通过',
+};
+/** Mirrors the server's verification presentation fields for the demo list. */
+const presentVerification = (v: Row) => ({
+  ...v,
+  display_state: v.status,
+  display_label: verificationLabels[v.status] ?? v.status,
+  detail_reason: v.reason,
+  attempts: v.attempts ?? v.wrong_answers ?? 0,
+  can_approve: !['passed', 'left', 'superseded', 'cancelled', 'removed'].includes(v.status),
+  can_resend: false,
+});
 const keywordMatch = (rule: Row, text: string) =>
   rule.keywords.find((word: string) => {
     const key = normalizeKeyword(word),
@@ -442,7 +459,10 @@ export class DemoStore {
         'lotteries',
         'audit',
       ])
-        if (path === '/' + collection) return structuredClone(s[collection]);
+        if (path === '/' + collection)
+          return collection === 'verifications'
+            ? s.verifications.map(presentVerification)
+            : structuredClone(s[collection]);
     }
     const aMatch = path.match(/^\/accounts\/([^/]+)\/(.+)$/);
     if (aMatch) {
@@ -598,7 +618,8 @@ export class DemoStore {
         const messages = rows.slice(Math.max(0, index - 50), index);
         return { messages, pagination: { has_more: index > 50, before: messages[0]?.id ?? null } };
       }
-      if (action === 'verifications') return s.verifications.filter((v: Row) => v.conversation_id === id);
+      if (action === 'verifications')
+        return s.verifications.filter((v: Row) => v.conversation_id === id).map(presentVerification);
       if (action === 'policy')
         return this.update((d) => {
           if (
@@ -999,6 +1020,7 @@ export class DemoStore {
           user_id: user,
           name: user,
           avatar: null,
+          avatar_message_id: null,
           message_count: 0,
           flagged_count: 0,
           last_message_at: null,

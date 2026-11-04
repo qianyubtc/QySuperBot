@@ -10,6 +10,8 @@
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true
   },
   "include": ["packages/**/*.ts", "examples/**/*.ts"]

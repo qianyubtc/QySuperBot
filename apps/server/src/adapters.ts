@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { conversationPageSchema, receiptSchema, signRequest } from '../../../packages/contracts/src/index.ts';
 import type {
   Capability,
@@ -35,16 +34,6 @@ export interface GroupSnapshot {
   permissions: { capability: Capability; permission: 'granted' | 'denied' | 'unknown'; reason?: string }[];
   observed_at?: string;
 }
-const common: Capability[] = [
-  'conversations.list',
-  'messages.read',
-  'messages.send',
-  'messages.delete',
-  'members.list',
-  'members.remove',
-  'members.ban',
-  'members.mute',
-];
 export function groupSnapshot(
   externalId: string,
   name: string,
@@ -117,7 +106,13 @@ export class Adapters {
     this.config = config;
     this.box = box;
   }
-  async telegram(account: Row, action: string, params: unknown = {}, image?: UploadedImage) {
+  async telegram(
+    account: Row,
+    action: string,
+    params: unknown = {},
+    image?: UploadedImage,
+    options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ) {
     let body: string | FormData = JSON.stringify(params);
     if (image) {
       body = new FormData();
@@ -131,6 +126,7 @@ export class Adapters {
       body,
       headers: image ? {} : { 'content-type': 'application/json' },
       ...(image ? { timeoutMs: 45_000 } : {}),
+      ...options,
     });
   }
   async telegramFileUrl(account: Row, fileId: string) {

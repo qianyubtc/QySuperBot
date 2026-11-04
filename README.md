@@ -152,7 +152,7 @@ QQ 扫码登录需要在服务器上配置 NapCat；币安服务器登录需要 
 ### 构建运行
 
 ```bash
-npm run check
+npm run check   # 类型检查、格式检查（npm run format 可自动修正）与全部测试
 npm run build
 npm start
 ```

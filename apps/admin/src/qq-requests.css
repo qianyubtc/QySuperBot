@@ -1,0 +1,84 @@
+.qq-requests {
+  display: grid;
+  gap: 10px;
+}
+.qq-requests-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.qq-requests-head h3 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.qq-requests-head .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.qq-requests-note {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.qq-requests .request-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.qq-requests .request-toolbar .search {
+  flex: 1 1 180px;
+}
+.request-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.request-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+.request-row:first-child {
+  border-top: 0;
+}
+.request-main,
+.request-result {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.request-main > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.request-main time {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.request-row small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.request-row small.error-text {
+  color: var(--danger-text);
+}
+.request-result {
+  justify-items: end;
+  text-align: right;
+}
+.qq-requests-empty {
+  font-size: var(--fs-sm);
+}

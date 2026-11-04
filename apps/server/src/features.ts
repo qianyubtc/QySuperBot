@@ -48,10 +48,18 @@ export class FeaturesService {
       (SELECT count(*)::int FROM jobs WHERE status='pending') AS deliveries_pending,
       (SELECT count(*)::int FROM accounts WHERE is_demo=true) AS demo_accounts`)
     )[0]!;
-    const series = await this.ctx.db.query(`SELECT day::date::text AS date,
-      (SELECT count(*)::int FROM messages m WHERE m.created_at AT TIME ZONE 'Asia/Shanghai'>=day AND m.created_at AT TIME ZONE 'Asia/Shanghai'<day+interval '1 day') AS messages,
-      (SELECT count(*)::int FROM messages m WHERE m.verdict='blocked' AND m.created_at AT TIME ZONE 'Asia/Shanghai'>=day AND m.created_at AT TIME ZONE 'Asia/Shanghai'<day+interval '1 day') AS blocked
-      FROM generate_series(date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai')-interval '6 days',date_trunc('day',now() AT TIME ZONE 'Asia/Shanghai'),interval '1 day') AS day`);
+    // One grouped scan over the last seven Beijing days; the range on created_at can use its index.
+    const series = await this.ctx.db.query(`WITH start AS (
+        SELECT date_trunc('day', now() AT TIME ZONE 'Asia/Shanghai') - interval '6 days' AS day
+      ), days AS (
+        SELECT generate_series((SELECT day FROM start), (SELECT day FROM start) + interval '6 days', interval '1 day') AS day
+      ), totals AS (
+        SELECT date_trunc('day', created_at AT TIME ZONE 'Asia/Shanghai') AS day,
+          count(*)::int AS messages, count(*) FILTER (WHERE verdict='blocked')::int AS blocked
+        FROM messages WHERE created_at >= ((SELECT day FROM start) AT TIME ZONE 'Asia/Shanghai') GROUP BY 1
+      )
+      SELECT d.day::date::text AS date, COALESCE(t.messages,0) AS messages, COALESCE(t.blocked,0) AS blocked
+      FROM days d LEFT JOIN totals t ON t.day=d.day ORDER BY d.day`);
     const platforms = await this.ctx.db.query(
       'SELECT platform,count(*)::int AS groups FROM conversations GROUP BY platform ORDER BY groups DESC',
     );

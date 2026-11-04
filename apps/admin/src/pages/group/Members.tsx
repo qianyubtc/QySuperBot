@@ -10,7 +10,7 @@ import {
   VolumeX,
   Volume2,
 } from 'lucide-react';
-import { api } from '../../api';
+import { api, mediaUrl } from '../../api';
 import { Badge, Empty, Loading, date, n, useApp, useData } from '../../console/shared';
 import type { Data } from '../../console/shared';
 import { CopyButton } from '../../ConsoleTools';
@@ -43,6 +43,29 @@ const actionNames: Record<string, string> = {
   clearwarnings: '清除警告',
   warnings: '查询警告',
 };
+
+/** The member's platform avatar through the admin proxy, over their initial while it loads or if it is missing. */
+function MemberAvatar({ g, m, small }: { g: Data; m: Data; small?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const proxied =
+    !failed && !g.is_demo && m.avatar_message_id && ['telegram', 'qq', 'binance'].includes(g.platform);
+  return (
+    <span className={small ? 'avatar sm' : 'avatar'}>
+      {String(m.name).slice(0, 1)}
+      {proxied && (
+        <img
+          src={mediaUrl(
+            `/api/v1/conversations/${encodeURIComponent(g.id)}/messages/${encodeURIComponent(m.avatar_message_id)}/avatar`,
+          )}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </span>
+  );
+}
 
 function Tags({ m }: { m: Data }) {
   return (
@@ -88,7 +111,7 @@ export default function Members({ g, member }: { g: Data; member?: string | null
             {data.members.map((m: Data) => (
               <li key={m.user_id}>
                 <button onClick={() => setSelected(m.user_id)}>
-                  <span className="avatar sm">{String(m.name).slice(0, 1)}</span>
+                  <MemberAvatar g={g} m={m} small />
                   <span className="member-main">
                     <strong>{m.name}</strong>
                     <small>
@@ -142,7 +165,7 @@ function MemberDetail({ g, userId, back }: { g: Data; userId: string; back: () =
         {m && (
           <div className="stack">
             <header className="member-head">
-              <span className="avatar">{String(m.name).slice(0, 1)}</span>
+              <MemberAvatar g={g} m={m} />
               <div>
                 <h3>{m.name}</h3>
                 <span className="mono-row">

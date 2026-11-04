@@ -94,7 +94,9 @@ test('one image or image-caption broadcast fans out to TG, QQ and Binance with s
         [created.id],
       );
       const account = await s.accounts.get(created.id);
-      groups.push(await s.accounts.upsertGroup(account, groupSnapshot('10001', kind, 'group', 3, kind, true)));
+      groups.push(
+        await s.accounts.upsertGroup(account, groupSnapshot('10001', kind, 'group', 3, kind, true)),
+      );
       if (kind === 'binance') s.binance.peers.set(account.id, { extensionVersion: '0.1.8' } as any);
     }
     s.adapters.telegram = async (_account, action, params, upload) => {

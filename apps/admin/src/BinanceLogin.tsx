@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react';
 import { api } from './api';
+import './login-flow.css';
 import './binance-login.css';
 
 export default function BinanceLogin({
@@ -155,127 +156,130 @@ export default function BinanceLogin({
   }
   return (
     <div className="binance-login">
-      <div className="binance-login-guide">
-        <strong>{relogin ? '重新登录，恢复同步' : '登录后由服务器持续同步'}</strong>
-        <p>① 在下方窗口完成币安登录或验证　② 点击“连接此账号”　③ 验证成功后自动关闭窗口并恢复同步</p>
-        {relogin && <p>请使用原来的币安账号。原群选择和历史消息保留，无需重新配对或复制令牌。</p>}
-      </div>
-      <div className="binance-login-status">
-        <span className={ready ? 'login-dot online' : 'login-dot'} />
-        {state}
-        {!ready && (
-          <button
-            className="text-button"
-            onClick={() => {
-              setState('正在重新连接…');
-              setRevision((v) => v + 1);
-            }}
+      <ol className="login-steps">
+        {['在窗口中登录币安', '连接此账号', '服务器持续同步'].map((label, index) => (
+          <li
+            key={label}
+            className={index === (busy ? 1 : 0) ? 'current' : index < (busy ? 1 : 0) ? 'done' : ''}
           >
-            重新连接窗口
-          </button>
-        )}
-      </div>
-      <div className="binance-login-address" title={page}>
-        {page}
-      </div>
-      <div className="binance-login-screen">
-        {!ready && (
-          <div className="binance-login-placeholder">
-            <LoaderCircle size={26} className="spin" />
-            <span>等待服务器画面</span>
-          </div>
-        )}
-        <canvas
-          ref={canvas}
-          width={1200}
-          height={800}
-          tabIndex={0}
-          aria-label="币安登录窗口，点击画面后可输入，支持粘贴文字"
-          role="application"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.focus();
-            e.currentTarget.setPointerCapture(e.pointerId);
-            pointer(e, 'mousePressed');
-          }}
-          onPointerUp={(e) => {
-            e.preventDefault();
-            pointer(e, 'mouseReleased');
-          }}
-          onPointerCancel={(e) => pointer(e, 'mouseReleased')}
-          onPointerMove={(e) => pointer(e, 'mouseMoved')}
-          onWheel={(e) => {
-            e.preventDefault();
-            const r = e.currentTarget.getBoundingClientRect();
-            send({
-              type: 'pointer',
-              action: 'mouseWheel',
-              x: Math.max(0, Math.min(1200, ((e.clientX - r.left) / r.width) * 1200)),
-              y: Math.max(0, Math.min(800, ((e.clientY - r.top) / r.height) * 800)),
-              deltaX: Math.max(-5000, Math.min(5000, e.deltaX)),
-              deltaY: Math.max(-5000, Math.min(5000, e.deltaY)),
-            });
-          }}
-          onKeyDown={(e) => key(e, 'keyDown')}
-          onKeyUp={(e) => key(e, 'keyUp')}
-          onPaste={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const text = e.clipboardData.getData('text/plain');
-            if (text && text.length <= 4096) send({ type: 'text', text });
-          }}
-          onCompositionEnd={(e) => {
-            if (e.data && e.data.length <= 4096) send({ type: 'text', text: e.data });
-          }}
-        />
+            {label}
+          </li>
+        ))}
+      </ol>
+      {relogin && <p className="login-note">请使用原来的币安账号登录；原群选择和历史消息都会保留。</p>}
+      <div className="binance-window">
+        <div className="binance-window-bar">
+          <span className={ready ? 'login-dot online' : 'login-dot'} title={state} />
+          <span className="binance-window-url" title={page}>
+            {page}
+          </span>
+          {ready ? (
+            <>
+              <button
+                className="text-button"
+                disabled={busy}
+                onClick={() => {
+                  void api(`/accounts/${id}/binance-browser/navigate`, {
+                    method: 'POST',
+                    body: { destination: 'login', window_id: windowId },
+                  }).catch((e) => setError(e.message));
+                }}
+              >
+                登录页
+              </button>
+              <button
+                className="text-button"
+                disabled={busy}
+                onClick={() => {
+                  void api(`/accounts/${id}/binance-browser/navigate`, {
+                    method: 'POST',
+                    body: { window_id: windowId },
+                  }).catch((e) => setError(e.message));
+                }}
+              >
+                <RefreshCw size={12} /> 聊天页
+              </button>
+            </>
+          ) : (
+            <button
+              className="text-button"
+              onClick={() => {
+                setState('正在重新连接…');
+                setRevision((v) => v + 1);
+              }}
+            >
+              重新连接窗口
+            </button>
+          )}
+        </div>
+        <div className="binance-login-screen">
+          {!ready && (
+            <div className="binance-login-placeholder">
+              <LoaderCircle size={26} className="spin" />
+              <span>{state}</span>
+            </div>
+          )}
+          <canvas
+            ref={canvas}
+            width={1200}
+            height={800}
+            tabIndex={0}
+            aria-label="币安登录窗口，点击画面后可输入，支持粘贴文字"
+            role="application"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.focus();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              pointer(e, 'mousePressed');
+            }}
+            onPointerUp={(e) => {
+              e.preventDefault();
+              pointer(e, 'mouseReleased');
+            }}
+            onPointerCancel={(e) => pointer(e, 'mouseReleased')}
+            onPointerMove={(e) => pointer(e, 'mouseMoved')}
+            onWheel={(e) => {
+              e.preventDefault();
+              const r = e.currentTarget.getBoundingClientRect();
+              send({
+                type: 'pointer',
+                action: 'mouseWheel',
+                x: Math.max(0, Math.min(1200, ((e.clientX - r.left) / r.width) * 1200)),
+                y: Math.max(0, Math.min(800, ((e.clientY - r.top) / r.height) * 800)),
+                deltaX: Math.max(-5000, Math.min(5000, e.deltaX)),
+                deltaY: Math.max(-5000, Math.min(5000, e.deltaY)),
+              });
+            }}
+            onKeyDown={(e) => key(e, 'keyDown')}
+            onKeyUp={(e) => key(e, 'keyUp')}
+            onPaste={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const text = e.clipboardData.getData('text/plain');
+              if (text && text.length <= 4096) send({ type: 'text', text });
+            }}
+            onCompositionEnd={(e) => {
+              if (e.data && e.data.length <= 4096) send({ type: 'text', text: e.data });
+            }}
+          />
+        </div>
       </div>
       {error && (
         <div role="alert" className="form-error">
           {error}
         </div>
       )}
-      <p className="binance-login-help">
-        在窗口内完成币安登录、扫码或验证码，再连接此账号。连接时会读取必要登录凭据并加密保存到本服务器；验证失败可继续操作窗口。窗口关闭后保留此专用账号的登录会话。
-      </p>
-      <div className="binance-login-actions">
-        <div>
-          <button
-            className="btn"
-            disabled={busy || !ready}
-            onClick={() => {
-              void api(`/accounts/${id}/binance-browser/navigate`, {
-                method: 'POST',
-                body: { destination: 'login', window_id: windowId },
-              }).catch((e) => setError(e.message));
-            }}
-          >
-            打开登录页
-          </button>
-          <button
-            className="btn"
-            disabled={busy || !ready}
-            onClick={() => {
-              void api(`/accounts/${id}/binance-browser/navigate`, {
-                method: 'POST',
-                body: { window_id: windowId },
-              }).catch((e) => setError(e.message));
-            }}
-          >
-            <RefreshCw size={15} />
-            打开聊天页
-          </button>
-        </div>
-        <div>
-          <button className="btn" disabled={busy} onClick={close}>
-            关闭窗口
-          </button>
-          <button className="btn primary" disabled={busy || !ready} onClick={() => void connect()}>
-            {busy ? <LoaderCircle size={15} className="spin" /> : <CheckCircle2 size={15} />}
-            {busy ? '正在验证并连接…' : '连接此账号'}
-          </button>
-        </div>
-      </div>
+      <footer className="login-foot">
+        <small>{ready ? state : '登录凭据加密保存在本服务器'}</small>
+        <button className="btn" disabled={busy} onClick={close}>
+          关闭窗口
+        </button>
+        <button className="btn primary" disabled={busy || !ready} onClick={() => void connect()}>
+          {busy ? <LoaderCircle size={15} className="spin" /> : <CheckCircle2 size={15} />}
+          {busy ? '正在验证并连接…' : '连接此账号'}
+        </button>
+      </footer>
     </div>
   );
 }

@@ -517,6 +517,7 @@
   border-radius: var(--r-md);
 }
 .avatar {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 32px;
@@ -530,6 +531,8 @@
   flex: none;
 }
 .avatar img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;

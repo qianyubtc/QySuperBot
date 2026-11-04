@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from './api';
-import { Search, X } from 'lucide-react';
+import { Search, Settings2, UserCheck, X } from 'lucide-react';
+import { Empty, date } from './console/shared';
 import './verification.css';
 
 type Data = Record<string, any>;
-const date = (value: any) =>
-  value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—';
 const jobLabels: Record<string, string> = {
   pending: '等待执行',
   in_flight: '执行中',
@@ -96,21 +95,24 @@ export default function VerificationList({
       setBusy('');
     }
   };
+  const platform = (v: Data) =>
+    (({ telegram: 'Telegram', qq: 'QQ', binance: '币安', custom: '自有聊天' }) as Data)[v.platform] ??
+    v.platform;
+  const receipt = (id: string, label: string) => (
+    <Link to={`/announcements?delivery=${encodeURIComponent(id)}`}>{label}</Link>
+  );
   return (
-    <div className="verification-list">
-      <div className="verification-intro">
-        <h3>入群后的活人验证</h3>
-        <p>
-          {groupId
-            ? 'QQ 自动审核放人后，收到真实入群通知才创建验证。只验证开启后的新成员，不补发老成员挑战。'
-            : '集中查看各平台的成员验证记录。QQ 在真实入群通知后出题，不补发老成员挑战。'}
-        </p>
-        <p>
-          提示确认发送后开始计时。超时按群设置处理，可选择人工处理或循环禁言；发送失败、权限未知和结果待核对会单独显示。
+    <div className={groupId ? 'verification-list compact' : 'verification-list'}>
+      <div className="verification-head">
+        {groupId && <h3>入群验证</h3>}
+        <p className="muted">
+          {groupId ? '新成员入群后答题验证，' : '各群新成员的入群验证，'}
+          提示送达后开始计时，超时按群设置处理。
         </p>
         {openSettings && (
-          <button className="btn" onClick={openSettings}>
-            配置验证方式与超时处理
+          <button className="btn sm" onClick={openSettings}>
+            <Settings2 size={14} />
+            验证设置
           </button>
         )}
       </div>
@@ -169,114 +171,126 @@ export default function VerificationList({
         </div>
       )}
       {!rows ? (
-        <p>正在读取验证记录…</p>
+        <p className="muted verification-empty">正在读取验证记录…</p>
       ) : !rows.length ? (
-        <p className="muted verification-empty">暂无验证记录。开启后，新的真实入群通知会生成验证。</p>
+        <Empty icon={UserCheck} title="暂无验证记录" text="开启入群验证后，新成员入群会出现在这里。" />
       ) : (
-        <div className="table-wrap">
-          <table className="verification-table">
-            <thead>
-              <tr>
-                <th>成员 / 社群</th>
-                <th>验证状态</th>
-                <th>提示与截止</th>
-                <th>超时处理</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible?.map((v) => (
-                <tr key={v.id}>
-                  <td>
-                    <code>{v.user_id}</code>
-                    <small>
-                      <Link
-                        to={`/groups/${v.conversation_id}${v.is_qq_verification ? '?verification=' + encodeURIComponent(v.id) : ''}`}
-                      >
-                        {v.conversation_name}
-                      </Link>
-                    </small>
-                    <small>
-                      {({ telegram: 'Telegram', qq: 'QQ', binance: '币安', custom: '自有聊天' } as Data)[
-                        v.platform
-                      ] ?? v.platform}
-                    </small>
-                    {v.join_request_id && <small>来自入群审核</small>}
-                    {v.is_qq_verification && <small>第 {v.verification_round ?? 1} 轮验证</small>}
-                  </td>
-                  <td>
+        <>
+          <ul className="verification-rows">
+            {visible?.map((v) => {
+              const problems = [
+                v.challenge_error && `提示发送：${v.challenge_error}`,
+                v.timeout_error &&
+                  `${v.timeout_command === 'member.mute' ? '超时禁言' : '超时移出'}：${v.timeout_error}`,
+                v.failure_error && `答错禁言：${v.failure_error}`,
+              ].filter(Boolean) as string[];
+              return (
+                <li key={v.id} className="verification-row">
+                  <div className="verification-who">
+                    <span className="avatar">{String(v.user_id).slice(0, 1)}</span>
+                    <div>
+                      <code>{v.user_id}</code>
+                      <small>
+                        <Link
+                          to={`/groups/${v.conversation_id}${v.is_qq_verification ? '?verification=' + encodeURIComponent(v.id) : ''}`}
+                        >
+                          {v.conversation_name}
+                        </Link>
+                        {' · '}
+                        {platform(v)}
+                        {v.is_qq_verification && ` · 第 ${v.verification_round ?? 1} 轮`}
+                      </small>
+                    </div>
+                  </div>
+                  <div className="verification-status">
                     <span className={`verification-state ${v.display_state}`}>
                       {v.display_label ?? v.status}
                     </span>
-                    {v.detail_reason && <small>{v.detail_reason}</small>}
-                    {v.challenge_error && (
-                      <small className="error-text">提示发送记录：{v.challenge_error}</small>
-                    )}
-                    {v.timeout_error && (
-                      <small className="error-text">
-                        {v.timeout_command === 'member.mute' ? '超时禁言记录' : '移出任务记录'}：
-                        {v.timeout_error}
+                    <small>{v.detail_reason || `已作答 ${v.attempts} / 3 次`}</small>
+                    {problems.map((text) => (
+                      <small key={text} className="error-text">
+                        {text}
                       </small>
+                    ))}
+                  </div>
+                  <div className="verification-deadline">
+                    <small>截止</small>
+                    <span>
+                      {v.is_qq_verification && !v.challenge_sent_at ? '提示送达后计时' : date(v.expires_at)}
+                    </span>
+                  </div>
+                  <div className="verification-actions">
+                    {v.can_approve && (
+                      <button className="btn sm" disabled={!!busy} onClick={() => void act(v, 'approve')}>
+                        人工通过
+                      </button>
                     )}
-                    {v.failure_error && <small className="error-text">禁言任务记录：{v.failure_error}</small>}
-                    <small>已作答 {v.attempts} / 3 次</small>
-                  </td>
-                  <td>
-                    {v.is_qq_verification && !v.challenge_sent_at ? '确认发送后开始计时' : date(v.expires_at)}
-                    {v.challenge_sent_at && <small>提示送达：{date(v.challenge_sent_at)}</small>}
-                    {v.challenge_job_id && (
-                      <small>
-                        <Link to={`/announcements?delivery=${encodeURIComponent(v.challenge_job_id)}`}>
-                          查看提示发送回执
-                        </Link>
-                      </small>
+                    {v.can_resend && (
+                      <button className="btn sm" disabled={!!busy} onClick={() => void act(v, 'resend')}>
+                        重发验证
+                      </button>
                     )}
-                  </td>
-                  <td>
-                    {v.timeout_action === 'remove'
-                      ? '超时自动移出'
-                      : v.timeout_action === 'mute_retry'
-                        ? '超时禁言 10 分钟并循环验证'
-                        : '交由管理员处理'}
-                    {v.retry_after && (
-                      <small>预计重新出题：{date(v.retry_after)}，届时核对已解除禁言再发送</small>
-                    )}
-                    {v.failed_action === 'mute' && <small>连续答错 3 次禁言 10 分钟</small>}
-                    {v.muted_until && <small>禁言预计到期：{date(v.muted_until)}，由 QQ 自动解除</small>}
-                    {v.failure_job_id && (
-                      <small>
-                        <Link to={`/announcements?delivery=${encodeURIComponent(v.failure_job_id)}`}>
-                          查看答错禁言回执（{jobLabels[v.failure_status] ?? v.failure_status}）
-                        </Link>
-                      </small>
-                    )}
-                    {v.timeout_job_id && (
-                      <small>
-                        <Link to={`/announcements?delivery=${encodeURIComponent(v.timeout_job_id)}`}>
-                          {v.timeout_command === 'member.mute' ? '查看超时禁言回执' : '查看移出任务回执'}
-                        </Link>
-                      </small>
-                    )}
-                  </td>
-                  <td>
-                    <div className="verification-actions">
-                      {v.can_approve && (
-                        <button className="btn" disabled={!!busy} onClick={() => void act(v, 'approve')}>
-                          人工通过
-                        </button>
+                  </div>
+                  <details className="verification-more">
+                    <summary>详情</summary>
+                    <dl>
+                      <dt>超时处理</dt>
+                      <dd>
+                        {v.timeout_action === 'remove'
+                          ? '自动移出'
+                          : v.timeout_action === 'mute_retry'
+                            ? '禁言 10 分钟后重新出题'
+                            : '交由管理员'}
+                        {v.failed_action === 'mute' && '；答错 3 次禁言 10 分钟'}
+                      </dd>
+                      {v.challenge_sent_at && (
+                        <>
+                          <dt>提示送达</dt>
+                          <dd>{date(v.challenge_sent_at)}</dd>
+                        </>
                       )}
-                      {v.can_resend && (
-                        <button className="btn" disabled={!!busy} onClick={() => void act(v, 'resend')}>
-                          重新发送验证
-                        </button>
+                      {v.retry_after && (
+                        <>
+                          <dt>重新出题</dt>
+                          <dd>{date(v.retry_after)}（先核对已解除禁言）</dd>
+                        </>
                       )}
-                      {!v.can_approve && !v.can_resend && <span className="muted">—</span>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {v.muted_until && (
+                        <>
+                          <dt>禁言到期</dt>
+                          <dd>{date(v.muted_until)}，由 QQ 自动解除</dd>
+                        </>
+                      )}
+                      {v.join_request_id && (
+                        <>
+                          <dt>来源</dt>
+                          <dd>入群审核</dd>
+                        </>
+                      )}
+                      {(v.challenge_job_id || v.failure_job_id || v.timeout_job_id) && (
+                        <>
+                          <dt>执行回执</dt>
+                          <dd className="verification-receipts">
+                            {v.challenge_job_id && receipt(v.challenge_job_id, '验证提示')}
+                            {v.failure_job_id &&
+                              receipt(
+                                v.failure_job_id,
+                                `答错禁言（${jobLabels[v.failure_status] ?? v.failure_status}）`,
+                              )}
+                            {v.timeout_job_id &&
+                              receipt(
+                                v.timeout_job_id,
+                                v.timeout_command === 'member.mute' ? '超时禁言' : '超时移出',
+                              )}
+                          </dd>
+                        </>
+                      )}
+                    </dl>
+                  </details>
+                </li>
+              );
+            })}
+          </ul>
           {!visible?.length && (
             <p className="verification-empty muted">
               没有符合条件的验证记录。
@@ -291,7 +305,7 @@ export default function VerificationList({
               </button>
             </p>
           )}
-        </div>
+        </>
       )}
     </div>
   );

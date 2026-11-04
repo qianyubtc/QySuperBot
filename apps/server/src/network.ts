@@ -39,15 +39,7 @@ export async function requestRemote(
     }
   }
   const address = addresses.find((item) => item.family === 4) ?? addresses[0]!;
-  // Pin the validated IP so a second DNS lookup cannot redirect the request into a private network.
-  const agent = new Agent({
-    connect: {
-      lookup: (_host: any, opts: any, callback: any) => {
-        if (opts.all) callback(null, [{ address: address.address, family: address.family }]);
-        else callback(null, address.address, address.family);
-      },
-    },
-  });
+  const agent = pinnedAgent(`${url.protocol}//${url.host}|${address.address}`, address);
   try {
     const response = await fetch(url, {
       method: options.method ?? 'GET',
@@ -73,9 +65,39 @@ export async function requestRemote(
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(502, 'CONNECTOR_UNREACHABLE', '连接器请求失败或超时');
-  } finally {
-    await agent.close();
   }
+}
+/**
+ * One keep-alive connection pool per origin and validated IP, so repeated calls (Telegram long
+ * polling, NapCat, Binance) skip a fresh TCP + TLS handshake. The pool is pinned to the IP that
+ * passed the range check, so a later DNS answer cannot redirect it into a private network; a new
+ * address gets its own pool. Idle pools close after a minute.
+ */
+const agents = new Map<string, { agent: Agent; timer?: ReturnType<typeof setTimeout> }>();
+function pinnedAgent(key: string, address: { address: string; family: number }) {
+  let entry = agents.get(key);
+  if (!entry) {
+    entry = {
+      agent: new Agent({
+        keepAliveTimeout: 20_000,
+        connect: {
+          lookup: (_host: any, opts: any, callback: any) => {
+            if (opts.all) callback(null, [{ address: address.address, family: address.family }]);
+            else callback(null, address.address, address.family);
+          },
+        },
+      }),
+    };
+    agents.set(key, entry);
+  }
+  const current = entry;
+  if (current.timer) clearTimeout(current.timer);
+  current.timer = setTimeout(() => {
+    if (agents.get(key) === current) agents.delete(key);
+    void current.agent.close().catch(() => undefined);
+  }, 60_000);
+  current.timer.unref();
+  return current.agent;
 }
 export async function requestJson(url: string, options: Parameters<typeof requestRemote>[1] = {}) {
   const response = await requestRemote(url, options);

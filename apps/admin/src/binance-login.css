@@ -1,15 +1,6 @@
 .modal.modal-wide {
   width: 1120px;
 }
-.binance-login-status {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 12px;
-  color: var(--text-2);
-  margin: 18px 0 12px;
-  flex-wrap: wrap;
-}
 .login-dot {
   width: 7px;
   height: 7px;
@@ -20,24 +11,52 @@
   background: var(--accent);
   box-shadow: var(--shadow-sm);
 }
-.binance-login-address {
-  color: var(--text-2);
+.binance-login {
+  display: grid;
+  gap: 14px;
+}
+.binance-window {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+}
+.binance-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--fs-xs);
+}
+.binance-window-bar .login-dot {
+  flex: none;
+}
+.binance-window-url {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-3);
   font:
     11px ui-monospace,
     monospace;
-  margin-bottom: 8px;
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.binance-window-bar .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
 }
 .binance-login-screen {
   position: relative;
   display: flex;
   justify-content: center;
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
 }
 .binance-login-screen canvas {
   display: block;
@@ -61,18 +80,4 @@
   gap: 12px;
   pointer-events: none;
   color: var(--text-3);
-}
-.binance-login-help {
-  font-size: 12px;
-  line-height: 1.8;
-  color: var(--text-2);
-  margin: 14px 0;
-}
-.binance-login-actions,
-.binance-login-actions > div {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
 }

@@ -23,6 +23,7 @@ import {
 } from './qq-verification.ts';
 import type { QQMembershipProof } from './qq-verification.ts';
 import { checkKeywordJob } from './keyword-rules.ts';
+import { log } from './log.ts';
 
 export class JobsService {
   ctx: Context;
@@ -118,11 +119,23 @@ export class JobsService {
       }
     });
   }
+  /** Claims and runs the next due job; returns false when nothing is due. */
   async processOnce(): Promise<boolean> {
+    const next = await this.claim();
+    if (!next) return false;
+    await next.run();
+    return true;
+  }
+  /**
+   * Claims the next due job whose account is not in `busy`, so the worker can run jobs of
+   * different accounts side by side while each account still executes its jobs one at a time.
+   */
+  async claim(busy: string[] = []): Promise<{ accountId: string; run: () => Promise<void> } | null> {
     const claimed = await this.ctx.db.transaction(async (tx) => {
       const job = (
         await tx.query(
-          "SELECT * FROM jobs WHERE status='pending' AND due_at<=now() ORDER BY CASE WHEN action IN ('message.delete','member.remove') THEN 0 ELSE 1 END,due_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+          "SELECT * FROM jobs WHERE status='pending' AND due_at<=now() AND NOT (account_id = ANY($1::text[])) ORDER BY CASE WHEN action IN ('message.delete','member.remove') THEN 0 ELSE 1 END,due_at,created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+          [busy],
         )
       )[0];
       if (!job) return null;
@@ -178,7 +191,7 @@ export class JobsService {
           "UPDATE jobs SET status='failed',current_attempt=$2,receipt=$3::jsonb,last_error=$4,updated_at=now() WHERE id=$1",
           [job.id, number, json(receipt), receipt.error.message],
         );
-        return { kind: 'invalid' as const };
+        return { kind: 'invalid' as const, accountId: String(job.account_id) };
       }
       const command = validated.data;
       await tx.query(
@@ -191,9 +204,23 @@ export class JobsService {
       );
       return { kind: 'ready' as const, job, group, account, binding, command };
     });
-    if (!claimed) return false;
-    if (claimed.kind === 'invalid') return true;
-    const { job, group, account, binding, command } = claimed;
+    if (!claimed) return null;
+    if (claimed.kind === 'invalid') return { accountId: claimed.accountId, run: async () => {} };
+    return { accountId: String(claimed.account.id), run: () => this.run(claimed) };
+  }
+  private async run({
+    job,
+    group,
+    account,
+    binding,
+    command,
+  }: {
+    job: Row;
+    group: Row;
+    account: Row;
+    binding: Row | undefined;
+    command: ConnectorCommand;
+  }) {
     const base = {
       schema_version: '1' as const,
       command_id: job.id,
@@ -203,8 +230,25 @@ export class JobsService {
       observed_at: new Date().toISOString(),
     };
     let receipt: ExecutionReceipt;
+    let precondition: Awaited<ReturnType<JobsService['preconditions']>>;
     try {
-      const precondition = await this.preconditions(job, group, account, binding, command);
+      precondition = await this.preconditions(job, group, account, binding, command);
+    } catch (error) {
+      // Nothing has reached the platform yet, so this is a plain retryable failure, not an
+      // unknown outcome that would need manual reconciliation.
+      log.warn('job precondition check failed', { job: job.id, action: job.action, error });
+      await this.saveReceipt(account.id, {
+        ...base,
+        status: 'failed',
+        error: {
+          code: 'PRECONDITION_CHECK_FAILED',
+          message: '执行前检查暂时失败，未调用平台，可以重试',
+          retryable: true,
+        },
+      });
+      return;
+    }
+    try {
       if (precondition)
         receipt = {
           ...base,
@@ -227,12 +271,12 @@ export class JobsService {
             this.preconditions(job, group, account, binding, command, proof),
           ),
         );
-    } catch {
+    } catch (error) {
+      log.warn('job execution outcome unknown', { job: job.id, action: job.action, error });
       await this.markUncertain(account.id, command, '未取得可确认的执行回执，需要核对');
-      return true;
+      return;
     }
     await this.saveReceipt(account.id, receipt);
-    return true;
   }
   private async markUncertain(accountId: string, command: ConnectorCommand, message: string) {
     await this.ctx.db.transaction(async (tx) => {
