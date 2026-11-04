@@ -16,6 +16,18 @@ export interface Config {
   qqWebuiToken?: string;
   binanceBrowserEnabled?: boolean;
   binanceBrowserExecutable?: string;
+  /** Express `trust proxy`: which direct peers may report the client address in X-Forwarded-For. */
+  trustProxy?: boolean | number | string;
+}
+export function parseTrustProxy(value = 'loopback'): boolean | number | string {
+  const text = value.trim();
+  if (['', 'false', '0'].includes(text)) return false;
+  // Trusting every peer would let any client choose its own address and bypass per-client limits.
+  if (text === 'true')
+    throw new Error(
+      'TRUST_PROXY=true trusts spoofed addresses; use loopback, a hop count or proxy addresses',
+    );
+  return /^\d+$/.test(text) ? Number(text) : text;
 }
 export function loadConfig(): Config {
   const port = Number(process.env.PORT ?? 3000);
@@ -42,5 +54,6 @@ export function loadConfig(): Config {
     qqWebuiToken: process.env.QQ_WEBUI_TOKEN,
     binanceBrowserEnabled: process.env.BINANCE_BROWSER_ENABLED === 'true',
     binanceBrowserExecutable: process.env.BINANCE_BROWSER_EXECUTABLE ?? '/usr/bin/google-chrome',
+    trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   };
 }

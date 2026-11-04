@@ -7,6 +7,10 @@ import { credentialsInput, setupInput } from './inputs.ts';
 export type Principal =
   | { kind: 'admin'; id: string; name: string; csrf: string }
   | { kind: 'project'; id: string; name: string; conversation_ids: string[]; scopes: string[] };
+// Failed attempts allowed per 15 minutes: for one username from one client address, and for any
+// usernames from one address. There is no account-wide lock, so nobody can lock the admin out
+// from elsewhere.
+export const loginLimits = { perUser: 10, perAddress: 30 };
 export class AuthService {
   db: Database;
   config: Config;
@@ -41,27 +45,31 @@ export class AuthService {
   }
   async login(input: unknown, address: string) {
     const value = credentialsInput.parse(input);
-    const key = sha(address + ':' + value.username);
-    const limit = (
-      await this.db.query('SELECT * FROM login_limits WHERE key=$1 AND expires_at>now()', [key])
-    )[0];
-    if (limit && limit.failures >= 10)
+    const pair = sha(`login:${address}:${value.username}`);
+    const client = sha(`login-address:${address}`);
+    // Each attempt takes its slot before the password check, so parallel requests cannot all
+    // pass a "not yet limited" read. Failures keep the slot; a success gives it back.
+    const used = Object.fromEntries(
+      (
+        await this.db.query(
+          `INSERT INTO login_limits(key,failures,expires_at) VALUES($1,1,now()+interval '15 minutes'),($2,1,now()+interval '15 minutes')
+          ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN login_limits.expires_at<=now() THEN 1 ELSE login_limits.failures+1 END,
+          expires_at=CASE WHEN login_limits.expires_at<=now() THEN now()+interval '15 minutes' ELSE login_limits.expires_at END
+          RETURNING key,failures`,
+          [pair, client],
+        )
+      ).map((row) => [row.key, Number(row.failures)]),
+    );
+    if (used[pair]! > loginLimits.perUser || used[client]! > loginLimits.perAddress)
       throw new ApiError(429, 'LOGIN_RATE_LIMIT', '尝试次数过多，请稍后再试');
     const user = (await this.db.query('SELECT * FROM admins WHERE username=$1', [value.username]))[0];
     const valid = await checkPassword(
       value.password,
       user?.password_hash ?? `unused-timing-salt:${'0'.repeat(128)}`,
     );
-    if (!valid || !user) {
-      await this.db.query(
-        `INSERT INTO login_limits(key,failures,expires_at) VALUES($1,1,now()+interval '15 minutes')
-        ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN login_limits.expires_at<now() THEN 1 ELSE login_limits.failures+1 END,
-        expires_at=CASE WHEN login_limits.expires_at<now() THEN now()+interval '15 minutes' ELSE login_limits.expires_at END`,
-        [key],
-      );
-      throw new ApiError(401, 'INVALID_CREDENTIALS', '用户名或密码不正确');
-    }
-    await this.db.query('DELETE FROM login_limits WHERE key=$1', [key]);
+    if (!valid || !user) throw new ApiError(401, 'INVALID_CREDENTIALS', '用户名或密码不正确');
+    await this.db.query('DELETE FROM login_limits WHERE key=$1', [pair]);
+    await this.db.query('UPDATE login_limits SET failures=GREATEST(failures-1,0) WHERE key=$1', [client]);
     return this.newSession(user.id, user.username);
   }
   private async newSession(id: string, username: string) {

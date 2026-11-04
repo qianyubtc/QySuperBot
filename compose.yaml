@@ -10,6 +10,8 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set a 64-character hex ENCRYPTION_KEY}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:3000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Published ports reach the container through the Docker bridge, not loopback.
+      TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
       ALLOW_PRIVATE_CONNECTORS: ${ALLOW_PRIVATE_CONNECTORS:-false}
     volumes:
       - app-data:/app/data

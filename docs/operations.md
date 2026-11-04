@@ -39,11 +39,12 @@ Telegram 群详情新增“成员管理”，实时消息中的“管理”可�
 | `SEED_DEMO`                | 默认 true，仅首次初始化演示数据；改 false 不删除已有数据                                                 |
 | `ADMIN_SETUP_TOKEN`        | 初始化凭据；非回环地址必须配置，否则无法创建管理员                                                       |
 | `COOKIE_SECURE`            | HTTPS 部署设 true；本机 HTTP 保持 false                                                                  |
+| `TRUST_PROXY`              | 默认 `loopback`，只采信本机反向代理传来的客户端地址；Docker 默认 `loopback,uniquelocal`，不允许 `true`   |
 | `ENCRYPTION_KEY`           | 64 位十六进制 AES 密钥；留空在数据目录生成 `master.key`                                                  |
 | `ALLOW_PRIVATE_CONNECTORS` | 默认 false；连接本机/私网 QQ 或自有服务时显式设 true，链路本地地址仍拒绝                                 |
 | `QQ_LOCAL_PORT`            | 可选；仅 QQ 连接可访问 `http://127.0.0.1:<端口>`，其他私网地址仍按默认策略拒绝；同机 NapCat 优先使用此项 |
 
-密码用 scrypt 散列，平台凭据用 AES-256-GCM 加密，项目 Key 仅存散列。HttpOnly / SameSite=Strict 会话，写请求校验 CSRF。当前只有一个管理员，未提供网页密码修改/找回或密钥轮换。消息和审计持续保留，暂未实现自动清理。
+密码用 scrypt 散列，平台凭据用 AES-256-GCM 加密，项目 Key 仅存散列。HttpOnly / SameSite=Strict 会话，写请求校验 CSRF。登录失败按真实客户端地址限流：15 分钟内同一地址对同一用户名最多 10 次、对所有用户名合计最多 30 次，并发请求也计入；不设整个账号的锁定，其他地址仍可登录。当前只有一个管理员，未提供网页密码修改/找回或密钥轮换。消息和审计持续保留，暂未实现自动清理。
 
 ## Telegram
 

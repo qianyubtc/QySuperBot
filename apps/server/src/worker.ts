@@ -301,6 +301,7 @@ export class Worker {
       );
       await this.ctx.db.query('DELETE FROM sessions WHERE expires_at<now()');
       await this.ctx.db.query('DELETE FROM nonces WHERE expires_at<now()');
+      await this.ctx.db.query('DELETE FROM login_limits WHERE expires_at<now()');
       const due = await this.ctx.db.query(
         "SELECT id FROM lotteries WHERE status='open' AND closes_at<=now() LIMIT 10",
       );

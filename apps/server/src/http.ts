@@ -451,6 +451,13 @@ export async function createHttpApp(services: Services) {
     },
     { bodyParser: false, logger: ['error', 'warn'] },
   );
+  // The documented deployment reaches the app through a reverse proxy on the same host, so every
+  // request arrives from loopback. Trust only that peer's X-Forwarded-For so per-client limits see
+  // the real address, while a client connecting directly cannot choose its own.
+  (app.getHttpAdapter().getInstance() as express.Express).set(
+    'trust proxy',
+    services.config.trustProxy ?? 'loopback',
+  );
   app.use((req: Request, res: Response, next: () => void) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
