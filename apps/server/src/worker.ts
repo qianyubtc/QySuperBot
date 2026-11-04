@@ -12,6 +12,12 @@ import type { Row } from './database.ts';
 import { beginBinanceCheck, recordBinanceSuccess } from './binance-health.ts';
 import type { MemberManagement } from './member-management.ts';
 
+// Permission snapshots expire after five minutes. Full discovery re-reads every group's
+// permissions (for QQ, each group's member list), so it runs well inside that window instead of
+// on every maintenance cycle; QQ login loss is still checked every cycle.
+const permissionRefreshMs = 180_000;
+const fullRefreshesPerCycle = 20;
+
 export class Worker {
   ctx: Context;
   accounts: AccountsService;
@@ -149,8 +155,10 @@ export class Worker {
               String(Number(update.update_id) + 1),
             ]);
           }
+          // Polling runs every few seconds; only persist a status change or a coarse last-seen time.
           await this.ctx.db.query(
-            "UPDATE accounts SET status='online',last_seen_at=now(),last_error=NULL WHERE id=$1 AND status<>'paused'",
+            `UPDATE accounts SET status='online',last_seen_at=now(),last_error=NULL WHERE id=$1 AND status<>'paused'
+            AND (status<>'online' OR last_error IS NOT NULL OR last_seen_at IS NULL OR last_seen_at<now()-interval '30 seconds')`,
             [account.id],
           );
         } catch {
@@ -298,15 +306,25 @@ export class Worker {
       );
       for (const lottery of due) await this.features.drawLottery(lottery.id, '定时任务');
       const accounts = await this.ctx.db.query(
-        `SELECT id FROM accounts WHERE
+        `SELECT id,kind,status FROM accounts WHERE
           (kind IN ('telegram','qq','custom','binance') AND status='online') OR
           (kind IN ('qq','binance') AND status='error' AND external_id IS NOT NULL)
-        ORDER BY last_seen_at LIMIT 20`,
+        ORDER BY last_seen_at`,
       );
+      const now = Date.now();
+      const refreshed = (account: Row) => this.accounts.refreshedAt.get(account.id) ?? 0;
+      // Accounts in error retry every cycle; online accounts refresh once their permissions near expiry.
+      const refreshDue = accounts
+        .filter((account) => account.status !== 'online' || now - refreshed(account) >= permissionRefreshMs)
+        .sort((a, b) => refreshed(a) - refreshed(b))
+        .slice(0, fullRefreshesPerCycle);
       for (const account of accounts) {
         if (this.stopped) break;
         try {
-          await this.accounts.refresh(account.id, '定时刷新');
+          if (refreshDue.includes(account))
+            await this.accounts.refresh(account.id, '定时刷新', false, { audit: false });
+          else if (account.kind === 'qq' && account.status === 'online')
+            await this.accounts.checkQQLogin(account.id);
         } catch {
           /* visible in the account's last_error */
         }

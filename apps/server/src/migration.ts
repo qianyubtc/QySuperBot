@@ -51,11 +51,18 @@ CREATE TABLE IF NOT EXISTS messages (
   source_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), deleted boolean NOT NULL DEFAULT false,
   UNIQUE(account_id,conversation_id,external_id)
 );
-CREATE INDEX IF NOT EXISTS messages_conversation_time ON messages(conversation_id,created_at DESC);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to text;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_id text;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_avatar text;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS media jsonb NOT NULL DEFAULT '[]';
+CREATE INDEX IF NOT EXISTS messages_conversation_time_id ON messages(conversation_id,created_at DESC,id DESC);
+DROP INDEX IF EXISTS messages_conversation_time;
+CREATE INDEX IF NOT EXISTS messages_sender ON messages(account_id,conversation_id,sender_id);
+CREATE TABLE IF NOT EXISTS sender_profiles (
+  account_id text NOT NULL REFERENCES accounts(id), conversation_id text NOT NULL REFERENCES conversations(id),
+  sender_id text NOT NULL, sender_name text, sender_avatar text, updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,conversation_id,sender_id)
+);
 CREATE TABLE IF NOT EXISTS message_tombstones (
   account_id text NOT NULL REFERENCES accounts(id), conversation_id text NOT NULL REFERENCES conversations(id),
   external_id text NOT NULL, source_at timestamptz NOT NULL,
@@ -90,6 +97,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   last_error text, locked_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS jobs_due ON jobs(status,due_at);
+CREATE INDEX IF NOT EXISTS jobs_conversation_action_time ON jobs(conversation_id,action,created_at DESC,id DESC);
 ALTER TABLE verifications ADD COLUMN IF NOT EXISTS qq_context jsonb;
 ALTER TABLE verifications ADD COLUMN IF NOT EXISTS challenge_job_id text REFERENCES jobs(id);
 ALTER TABLE verifications ADD COLUMN IF NOT EXISTS timeout_job_id text REFERENCES jobs(id);

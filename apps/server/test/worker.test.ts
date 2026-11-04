@@ -54,12 +54,76 @@ test('maintenance recovers previously connected QQ and Binance accounts without 
     ]);
 
     // A user pause while discovery is in flight must win over automatic recovery.
+    for (const id of connected) await s.db.query("UPDATE accounts SET status='error' WHERE id=$1", [id]);
     s.adapters.discover = async (account) => {
       await s.db.query("UPDATE accounts SET status='paused' WHERE id=$1", [account.id]);
       return { externalId: account.external_id, displayName: account.name, groups: [] };
     };
     await (s.worker as any).maintenance();
     for (const id of connected) assert.equal((await s.accounts.get(id)).status, 'paused');
+  } finally {
+    await s.close();
+  }
+});
+
+test('maintenance checks QQ login every cycle but rereads group permissions only when they near expiry', async () => {
+  const s = await createServices(
+    { ...loadConfig(), dataDir: 'memory://', databaseUrl: undefined, seedDemo: false },
+    { worker: false, box: new SecretBox(randomBytes(32)) },
+  );
+  try {
+    const created = await s.accounts.create(
+      { kind: 'qq', name: 'qq', endpoint: 'https://example.com' },
+      'test',
+    );
+    await s.db.query("UPDATE accounts SET external_id='10001',status='online' WHERE id=$1", [created.id]);
+    const discovered: string[] = [];
+    const lookups: string[] = [];
+    let loginUser = '10001';
+    s.adapters.discover = async (account) => {
+      discovered.push(account.id);
+      return { externalId: '10001', displayName: 'qq', groups: [] };
+    };
+    s.adapters.qq = async (_account, action) => {
+      lookups.push(action);
+      return { status: 200, data: { retcode: 0, status: 'ok', data: { user_id: loginUser } } };
+    };
+    const audits = async () =>
+      (await s.db.query("SELECT id FROM audit WHERE action='account.refreshed' AND target=$1", [created.id]))
+        .length;
+
+    // A restart has no refresh history, so the first cycle rereads everything once, silently.
+    await (s.worker as any).maintenance();
+    assert.deepEqual(discovered, [created.id]);
+    assert.deepEqual(lookups, []);
+    assert.equal(await audits(), 0);
+
+    // Inside the permission window only the login is checked.
+    await (s.worker as any).maintenance();
+    await (s.worker as any).maintenance();
+    assert.deepEqual(discovered, [created.id]);
+    assert.deepEqual(lookups, ['get_login_info', 'get_login_info']);
+    assert.equal((await s.accounts.get(created.id)).status, 'online');
+
+    // Near expiry the full refresh runs again, still without filling the audit log.
+    s.accounts.refreshedAt.set(created.id, Date.now() - 181_000);
+    await (s.worker as any).maintenance();
+    assert.deepEqual(discovered, [created.id, created.id]);
+    assert.equal(await audits(), 0);
+
+    // An administrator's refresh is still recorded.
+    await s.accounts.refresh(created.id, 'admin');
+    assert.equal(await audits(), 1);
+
+    // A changed login surfaces within one cycle and the next cycle attempts recovery.
+    loginUser = '10002';
+    await (s.worker as any).maintenance();
+    const changed = await s.accounts.get(created.id);
+    assert.equal(changed.status, 'error');
+    assert.match(changed.last_error, /账号已变化/);
+    await (s.worker as any).maintenance();
+    assert.equal(discovered.length, 4);
+    assert.equal((await s.accounts.get(created.id)).status, 'online');
   } finally {
     await s.close();
   }

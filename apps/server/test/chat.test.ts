@@ -542,14 +542,18 @@ test('unchanged snapshots do not emit SSE frames just because their query timest
     flushHeaders() {},
   });
   response.on('data', (chunk) => chunks.push(String(chunk)));
+  // Streams re-read only after a committed write to a table the snapshot shows.
+  const touch = () => s.db.query('UPDATE conversations SET name=name WHERE id=$1', [group.id]);
   t.mock.timers.enable({ apis: ['setInterval'] });
   try {
     await s.chat.open(group.id, { headers } as Request, response as unknown as Response);
+    await touch();
     t.mock.timers.tick(1000);
     await setImmediate();
     assert.equal(calls, 2);
     assert.equal(chunks.join('').match(/event: chat.snapshot/g)?.length, 1);
     changed = true;
+    await touch();
     t.mock.timers.tick(1000);
     await setImmediate();
     assert.equal(chunks.join('').match(/event: chat.snapshot/g)?.length, 2);

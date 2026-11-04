@@ -13,6 +13,29 @@ export interface Database extends Sql {
   transaction<T>(handler: (sql: Sql) => Promise<T>): Promise<T>;
   close(): Promise<void>;
   mode: 'local' | 'postgres';
+  /**
+   * A process-local counter that changes after every committed write to one of the tables.
+   * Readers capture it before querying: a write that commits later always moves it again.
+   */
+  version(tables: readonly string[]): number;
+}
+
+const writeTarget = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-z_][a-z0-9_]*)/gi;
+// Records only writes that changed rows, so no-op upserts and conditional updates stay quiet.
+class Changes {
+  private versions = new Map<string, number>();
+  collect(text: string, affected: number | null | undefined, into: Set<string>) {
+    if (!affected || /^\s*SELECT\b/i.test(text)) return;
+    for (const match of text.matchAll(writeTarget)) into.add(match[1]!.toLowerCase());
+  }
+  commit(tables: Set<string>) {
+    for (const table of tables) this.versions.set(table, (this.versions.get(table) ?? 0) + 1);
+  }
+  version(tables: readonly string[]) {
+    let total = 0;
+    for (const table of tables) total += this.versions.get(table) ?? 0;
+    return total;
+  }
 }
 export async function openDatabase(config: Pick<Config, 'databaseUrl' | 'dataDir'>): Promise<Database> {
   if (config.databaseUrl) {
@@ -23,19 +46,31 @@ export async function openDatabase(config: Pick<Config, 'databaseUrl' | 'dataDir
       await pool.end();
       throw error;
     }
+    const changes = new Changes();
     return {
       mode: 'postgres',
-      query: async <T extends Row>(text: string, values: unknown[] = []) =>
-        (await pool.query<T>(text, values)).rows,
+      version: (tables) => changes.version(tables),
+      query: async <T extends Row>(text: string, values: unknown[] = []) => {
+        const result = await pool.query<T>(text, values);
+        const touched = new Set<string>();
+        changes.collect(text, result.rowCount, touched);
+        changes.commit(touched);
+        return result.rows;
+      },
       transaction: async (handler) => {
         const client = await pool.connect();
+        const touched = new Set<string>();
         try {
           await client.query('BEGIN');
           const result = await handler({
-            query: async <T extends Row>(text: string, values: unknown[] = []) =>
-              (await client.query<T>(text, values)).rows,
+            query: async <T extends Row>(text: string, values: unknown[] = []) => {
+              const value = await client.query<T>(text, values);
+              changes.collect(text, value.rowCount, touched);
+              return value.rows;
+            },
           });
           await client.query('COMMIT');
+          changes.commit(touched);
           return result;
         } catch (error) {
           await client.query('ROLLBACK');
@@ -81,17 +116,31 @@ export async function openDatabase(config: Pick<Config, 'databaseUrl' | 'dataDir
     throw error;
   }
   const db = startingDatabase;
+  const changes = new Changes();
   return {
     mode: 'local',
-    query: async <T extends Row>(text: string, values: unknown[] = []) =>
-      (await db.query<T>(text, values)).rows,
-    transaction: (handler) =>
-      db.transaction((tx) =>
+    version: (tables) => changes.version(tables),
+    query: async <T extends Row>(text: string, values: unknown[] = []) => {
+      const result = await db.query<T>(text, values);
+      const touched = new Set<string>();
+      changes.collect(text, result.affectedRows, touched);
+      changes.commit(touched);
+      return result.rows;
+    },
+    transaction: async (handler) => {
+      const touched = new Set<string>();
+      const result = await db.transaction((tx) =>
         handler({
-          query: async <T extends Row>(text: string, values: unknown[] = []) =>
-            (await tx.query<T>(text, values)).rows,
+          query: async <T extends Row>(text: string, values: unknown[] = []) => {
+            const value = await tx.query<T>(text, values);
+            changes.collect(text, value.affectedRows, touched);
+            return value.rows;
+          },
         }),
-      ),
+      );
+      changes.commit(touched);
+      return result;
+    },
     close: async () => {
       await db.close();
       await release();

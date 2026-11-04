@@ -14,7 +14,7 @@ import type { Context } from './context.ts';
 import { audit, epoch, json } from './context.ts';
 import { accountInput, defaultPolicy } from './inputs.ts';
 import { ApiError, equal, sha, token } from './security.ts';
-import { groupSnapshot } from './adapters.ts';
+import { groupSnapshot, qqSucceeded } from './adapters.ts';
 import { binanceGroupId } from './binance.ts';
 import type { GroupSnapshot } from './adapters.ts';
 import { idSchema } from '../../../packages/contracts/src/index.ts';
@@ -22,6 +22,8 @@ import { binanceConnection, hasBinanceLoginIssue } from './binance-health.ts';
 
 export class AccountsService {
   ctx: Context;
+  /** When each account last completed a full discovery, whoever requested it. */
+  refreshedAt = new Map<string, number>();
   constructor(ctx: Context) {
     this.ctx = ctx;
   }
@@ -146,7 +148,7 @@ export class AccountsService {
     );
     return id;
   }
-  async refresh(id: string, actor: string, resume = false) {
+  async refresh(id: string, actor: string, resume = false, options: { audit?: boolean } = {}) {
     if (resume)
       await this.ctx.db.query("UPDATE accounts SET status='configuring' WHERE id=$1 AND status='paused'", [
         id,
@@ -217,8 +219,11 @@ export class AccountsService {
           "UPDATE accounts SET external_id=$2,status='online',last_seen_at=now(),last_error=NULL WHERE id=$1",
           [id, result.externalId],
         );
-        await audit(tx, actor, 'account.refreshed', id, { groups: result.groups.length });
+        // Scheduled refreshes stay out of the audit log; failures remain visible as last_error.
+        if (options.audit !== false)
+          await audit(tx, actor, 'account.refreshed', id, { groups: result.groups.length });
       });
+      this.refreshedAt.set(id, Date.now());
       return { groups: result.groups.length };
     } catch (error) {
       if (error instanceof ApiError && error.code === 'STALE_CONNECTION') throw error;
@@ -232,6 +237,27 @@ export class AccountsService {
       if (error instanceof ApiError) throw error;
       throw new ApiError(502, 'CONNECTOR_RESPONSE', message);
     }
+  }
+  // Between full refreshes a single login lookup keeps a disconnected QQ client visible
+  // without re-reading every group's member list.
+  async checkQQLogin(id: string) {
+    const account = await this.get(id);
+    if (account.kind !== 'qq' || account.status !== 'online') return;
+    let message: string | undefined;
+    try {
+      const me = await this.ctx.adapters.qq(account, 'get_login_info');
+      if (!qqSucceeded(me) || !/^\d+$/.test(String(me.data.data?.user_id ?? '')))
+        message = 'QQ 桥接尚未登录或接口不可用';
+      else if (String(me.data.data.user_id) !== account.external_id)
+        message = 'QQ 登录账号已变化，请恢复原账号或创建新连接';
+    } catch (error) {
+      message = error instanceof ApiError ? error.message : 'QQ 桥接尚未登录或接口不可用';
+    }
+    if (message)
+      await this.ctx.db.query(
+        "UPDATE accounts SET status='error',last_error=$2 WHERE id=$1 AND status='online'",
+        [id, message],
+      );
   }
   async addTelegramGroup(id: string, input: unknown, actor: string) {
     const value = z.strictObject({ external_id: z.string().regex(/^-?\d+$/) }).parse(input);

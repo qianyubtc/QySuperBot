@@ -20,6 +20,11 @@ const messageFields = `m.id,m.external_id,m.sender_id,m.sender_name,m.segments,l
   CASE WHEN q.deleted THEN '原消息已删除' ELSE left(q.content,280) END AS reply_content,q.deleted AS reply_deleted,
   ${moderationJobsSql()} AS moderation_jobs`;
 
+// Tables a chat snapshot reads. A stream recomputes only after one of them changes, or when
+// time-based state (expired permissions, sessions or retry windows) may have moved on.
+const snapshotTables = ['messages', 'jobs', 'conversations', 'accounts', 'bindings', 'metadata'] as const;
+const snapshotRefreshMs = 10_000;
+
 // Each snapshot is one SQL statement so messages and their delivery outcomes share a database snapshot.
 export class ChatService {
   ctx: Context;
@@ -349,6 +354,8 @@ export class ChatService {
     }
   }
   async open(id: string, req: Request, res: Response) {
+    let seen = this.ctx.db.version(snapshotTables);
+    let refreshedAt = Date.now();
     const initial = await this.snapshot(id);
     // A client can leave while SQL is loading, before the close listener exists.
     if (res.destroyed || res.writableEnded) return;
@@ -404,6 +411,11 @@ export class ChatService {
       try {
         const principal = await this.auth.authenticate(req.headers);
         this.auth.requireAdmin(principal);
+        // Capture the version before reading: a write committed during the query moves it again.
+        const version = this.ctx.db.version(snapshotTables);
+        if (version === seen && Date.now() - refreshedAt < snapshotRefreshMs) return;
+        seen = version;
+        refreshedAt = Date.now();
         const snapshot = await this.snapshot(id);
         const current = content(snapshot);
         if (current !== last) {

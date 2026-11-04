@@ -18,6 +18,49 @@ import { normalizePresentation, type Presentation } from './presentation.ts';
 import { QQVerification, qqVerificationRequired } from './qq-verification.ts';
 import { KeywordRules, keywordText } from './keyword-rules.ts';
 
+type SenderProfile = { sender_name: string | null; sender_avatar: string | null };
+// Messages keep the sender's display data for cheap reads. One profile row per sender records the
+// latest name and avatar, so the sender's history is rewritten only when one of them changes.
+export async function syncSenderProfile(
+  tx: Sql,
+  accountId: string,
+  conversationId: string,
+  senderId: string,
+  name: string | null,
+  avatar: string | null,
+): Promise<SenderProfile | undefined> {
+  const key = [accountId, conversationId, senderId];
+  if (name || avatar) {
+    const changed = (
+      await tx.query<SenderProfile>(
+        `INSERT INTO sender_profiles(account_id,conversation_id,sender_id,sender_name,sender_avatar) VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT(account_id,conversation_id,sender_id) DO UPDATE SET
+          sender_name=COALESCE(EXCLUDED.sender_name,sender_profiles.sender_name),
+          sender_avatar=COALESCE(EXCLUDED.sender_avatar,sender_profiles.sender_avatar),updated_at=now()
+        WHERE sender_profiles.sender_name IS DISTINCT FROM COALESCE(EXCLUDED.sender_name,sender_profiles.sender_name)
+          OR sender_profiles.sender_avatar IS DISTINCT FROM COALESCE(EXCLUDED.sender_avatar,sender_profiles.sender_avatar)
+        RETURNING sender_name,sender_avatar`,
+        [...key, name, avatar],
+      )
+    )[0];
+    if (changed) {
+      await tx.query(
+        `UPDATE messages SET sender_name=COALESCE($4,sender_name),sender_avatar=COALESCE($5,sender_avatar)
+        WHERE account_id=$1 AND conversation_id=$2 AND sender_id=$3 AND deleted=false
+          AND (sender_name IS DISTINCT FROM COALESCE($4,sender_name) OR sender_avatar IS DISTINCT FROM COALESCE($5,sender_avatar))`,
+        [...key, name, avatar],
+      );
+      return changed;
+    }
+  }
+  return (
+    await tx.query<SenderProfile>(
+      'SELECT sender_name,sender_avatar FROM sender_profiles WHERE account_id=$1 AND conversation_id=$2 AND sender_id=$3',
+      key,
+    )
+  )[0];
+}
+
 export class MessagesService {
   ctx: Context;
   jobs: JobsService;
@@ -55,15 +98,13 @@ export class MessagesService {
         )
       )[0];
       if (!row) return;
-      await tx.query(
-        'UPDATE messages SET sender_name=COALESCE($4,sender_name),sender_avatar=COALESCE($5,sender_avatar) WHERE account_id=$1 AND conversation_id=$2 AND sender_id=$3 AND deleted=false',
-        [
-          account.id,
-          row.conversation_id,
-          row.sender_id,
-          senderName?.trim().slice(0, 1024) || null,
-          display.avatar_url ?? null,
-        ],
+      await syncSenderProfile(
+        tx,
+        account.id,
+        row.conversation_id,
+        row.sender_id,
+        senderName?.trim().slice(0, 1024) || null,
+        display.avatar_url ?? null,
       );
     });
   }
@@ -106,19 +147,17 @@ export class MessagesService {
       const group = (
         await tx.query('SELECT * FROM conversations WHERE id=$1 FOR UPDATE', [binding.conversation_id])
       )[0]!;
+      let profile: SenderProfile | undefined;
       if (event.type === 'message.created' || event.type === 'message.edited') {
         const display = normalizePresentation(presentation);
-        if (senderName?.trim() || display.avatar_url)
-          await tx.query(
-            'UPDATE messages SET sender_name=COALESCE($4,sender_name),sender_avatar=COALESCE($5,sender_avatar) WHERE account_id=$1 AND conversation_id=$2 AND sender_id=$3 AND deleted=false',
-            [
-              account.id,
-              group.id,
-              event.data.sender_id,
-              senderName?.trim().slice(0, 1024) || null,
-              display.avatar_url ?? null,
-            ],
-          );
+        profile = await syncSenderProfile(
+          tx,
+          account.id,
+          group.id,
+          event.data.sender_id,
+          senderName?.trim().slice(0, 1024) || null,
+          display.avatar_url ?? null,
+        );
         // Profile enrichment never changes moderation decisions or replays business actions.
         await tx.query(
           `UPDATE messages SET sender_name=COALESCE($4,sender_name),sender_avatar=COALESCE($5,sender_avatar),media=CASE WHEN media->0->>'provider'='upload' THEN media WHEN jsonb_array_length($6::jsonb)>0 THEN $6::jsonb ELSE media END
@@ -217,11 +256,25 @@ export class MessagesService {
           [account.id, event.data.message_id, group.id],
         );
       } else if (event.type === 'message.created' || event.type === 'message.edited') {
-        await this.message(tx, account, group, event, senderName, historical);
+        // A message without display data still shows the sender's latest known name and avatar.
+        await this.message(
+          tx,
+          account,
+          group,
+          event,
+          senderName?.trim() ? senderName : (profile?.sender_name ?? undefined),
+          historical,
+        );
         const display = normalizePresentation(presentation);
         await tx.query(
           `UPDATE messages SET sender_avatar=COALESCE($4,sender_avatar),media=CASE WHEN media->0->>'provider'='upload' THEN media WHEN jsonb_array_length($5::jsonb)>0 THEN $5::jsonb ELSE media END WHERE account_id=$1 AND conversation_id=$2 AND external_id=$3 AND deleted=false`,
-          [account.id, group.id, event.data.message_id, display.avatar_url ?? null, json(display.images)],
+          [
+            account.id,
+            group.id,
+            event.data.message_id,
+            display.avatar_url ?? profile?.sender_avatar ?? null,
+            json(display.images),
+          ],
         );
       }
       await tx.query('UPDATE accounts SET last_seen_at=now() WHERE id=$1', [account.id]);
