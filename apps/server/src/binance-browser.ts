@@ -14,6 +14,8 @@ import type { AuthService } from './auth.ts';
 import { audit } from './context.ts';
 import { ChromePipe } from './chrome-pipe.ts';
 import { log } from './log.ts';
+import { HostedChannel, hostedPageScript } from './binance-hosted.ts';
+import type { ChatClient } from '../../../packages/binance-chat/client.js';
 
 const run = promisify(execFile);
 const home = 'https://www.binance.com/zh-CN/square/chat';
@@ -76,7 +78,25 @@ type Session = {
   ackTimer?: ReturnType<typeof setTimeout>;
   lastAck?: number;
   flow?: Map<WebSocket, ViewerFlow>;
+  /**
+   * Kept after "连接此账号": this browser, where a person signed in and passed Binance's human
+   * verification, now carries the account's chat traffic, so it stays open with no time limit.
+   */
+  keep?: boolean;
+  channel?: HostedChannel;
+  channelPending?: Promise<HostedChannel>;
+  /** Whether Chrome is streaming the screen (only while someone watches a kept browser). */
+  casting?: boolean;
+  watcher?: ReturnType<typeof setInterval>;
 };
+const onBinance = (url: unknown) => {
+  try {
+    return new URL(String(url)).origin === 'https://www.binance.com';
+  } catch {
+    return false;
+  }
+};
+const screencast = { format: 'jpeg', quality: 60, maxWidth: 1200, maxHeight: 800 };
 
 export class BinanceBrowser {
   session?: Session;
@@ -84,6 +104,8 @@ export class BinanceBrowser {
   closing = false;
   cleanup: Promise<void> = Promise.resolve();
   readonly publicOrigin: string;
+  hosting?: Promise<unknown>;
+  hostFailedAt = 0;
   constructor(
     readonly config: Config,
     readonly db: Database,
@@ -93,6 +115,7 @@ export class BinanceBrowser {
       credentials: unknown,
       actor: string,
       signal: AbortSignal,
+      options?: { hosted?: boolean },
     ) => Promise<unknown>,
   ) {
     try {
@@ -132,10 +155,11 @@ export class BinanceBrowser {
       running: s?.accountId === id && s.ready,
       starting: s?.accountId === id && !s.ready,
       window_id: s?.accountId === id ? s.id : null,
-      expires_at: s?.accountId === id ? new Date(s.expires).toISOString() : null,
+      kept: s?.accountId === id && !!s.keep,
+      expires_at: s?.accountId === id && !s.keep ? new Date(s.expires).toISOString() : null,
     };
   }
-  async start(id: string, actor: string) {
+  async start(id: string, actor: string, options: { keep?: boolean; url?: string } = {}) {
     if (!this.config.binanceBrowserEnabled || this.closing)
       throw new ApiError(409, 'BINANCE_BROWSER_UNAVAILABLE', '此服务器尚未启用币安登录窗口');
     await this.account(id);
@@ -159,7 +183,7 @@ export class BinanceBrowser {
     };
     this.session = s;
     const stop = () => {
-      if (this.session === s) this.stop(id);
+      if (this.session === s) this.stop(id, undefined, true);
     };
     s.expiry = setTimeout(stop, 15 * 60_000);
     s.expiry.unref();
@@ -216,7 +240,7 @@ export class BinanceBrowser {
           '--disable-dev-shm-usage',
           '--window-size=1280,900',
           '--force-device-scale-factor=1',
-          login,
+          options.url ?? login,
         ],
         {
           detached: true,
@@ -246,8 +270,12 @@ export class BinanceBrowser {
           event.method === 'Page.frameNavigated' &&
           event.sessionId === s.target &&
           !event.params.frame?.parentId
-        )
+        ) {
           this.page(s, event.params.frame?.url);
+          // A new document drops the page client; the next request installs it again.
+          s.channel?.close();
+          s.channel = undefined;
+        }
         if (event.method === 'Page.screencastFrame' && event.sessionId === s.target) {
           if (typeof event.params.data === 'string' && event.params.data.length <= 3 * 1024 * 1024)
             this.frame(s, event.params.sessionId, event.params.data);
@@ -259,13 +287,11 @@ export class BinanceBrowser {
       });
       const history = await s.cdp.command('Page.getNavigationHistory', {}, s.target);
       this.page(s, history.entries?.[history.currentIndex]?.url);
-      await s.cdp.command(
-        'Page.startScreencast',
-        { format: 'jpeg', quality: 60, maxWidth: 1200, maxHeight: 800 },
-        s.target,
-      );
+      await s.cdp.command('Page.startScreencast', screencast, s.target);
+      s.casting = true;
       if (this.session !== s) throw new ApiError(409, 'BINANCE_BROWSER_CLOSED', '登录窗口已关闭');
       s.ready = true;
+      if (options.keep) this.keep(s);
       await audit(this.db, actor, 'account.binance.browser_opened', id);
       this.current(id, s.id);
       return this.status(id);
@@ -342,6 +368,126 @@ export class BinanceBrowser {
       Math.max(0, (s.lastAck ?? 0) + frameIntervalMs - Date.now()),
     );
   }
+  /** Streams the screen while someone watches; an unwatched kept browser does not paint frames. */
+  private cast(s: Session) {
+    // An ordinary login window streams for its whole (short) life.
+    if (!s.keep) return;
+    const wanted = s.viewers.size > 0;
+    if (wanted === !!s.casting || !s.cdp || !s.target || this.session !== s) return;
+    s.casting = wanted;
+    void s.cdp
+      .command(wanted ? 'Page.startScreencast' : 'Page.stopScreencast', wanted ? screencast : {}, s.target)
+      .catch(() => {});
+  }
+  /** Turns the login window into the account's long-lived chat browser. */
+  private keep(s: Session) {
+    if (s.keep) return;
+    s.keep = true;
+    clearTimeout(s.expiry);
+    s.expiry = undefined;
+    s.expires = Number.POSITIVE_INFINITY;
+    this.cast(s);
+    // A paused, removed or re-configured account no longer needs this browser.
+    s.watcher = setInterval(() => {
+      void this.db
+        .query('SELECT kind,status,settings FROM accounts WHERE id=$1', [s.accountId])
+        .then(([row]) => {
+          if (
+            !row ||
+            row.kind !== 'binance' ||
+            row.status === 'paused' ||
+            row.settings?.transport !== 'direct' ||
+            row.settings?.direct_auth?.hosted !== true
+          )
+            this.stop(s.accountId, undefined, true);
+        })
+        .catch(() => {});
+    }, 60_000);
+    s.watcher.unref();
+  }
+  /**
+   * The chat client of a kept browser. When the browser is not running (after a restart, say) it is
+   * started again in the background; the request in hand fails and the next poll retries.
+   */
+  hostedClient(id: string, beforeSend?: (group: string) => Promise<void>): ChatClient {
+    const channel = () => this.channel(id);
+    return {
+      request: async (message) => (await channel()).client(beforeSend).request(message),
+      checkConnection: async (user) => (await channel()).client(beforeSend).checkConnection(user),
+      close() {
+        /* The browser outlives any one client. */
+      },
+    };
+  }
+  private async channel(id: string) {
+    const s = this.session;
+    if (!s || s.accountId !== id || !s.ready || !s.cdp || !s.target) {
+      if (s?.accountId === id && !s.ready)
+        throw new ApiError(503, 'BINANCE_BROWSER_STARTING', '服务器浏览器正在启动，稍后自动同步');
+      this.host(id);
+      throw new ApiError(503, 'BINANCE_BROWSER_STARTING', '服务器浏览器未运行，正在重新启动；稍后自动同步');
+    }
+    if (s.channel && !s.channel.dead) return s.channel;
+    s.channelPending ??= this.openChannel(s).finally(() => {
+      s.channelPending = undefined;
+    });
+    return s.channelPending;
+  }
+  private async openChannel(s: Session) {
+    const cdp = s.cdp!;
+    const frame = async () => (await cdp.command('Page.getFrameTree', {}, s.target)).frameTree?.frame;
+    let main = await frame();
+    if (!onBinance(main?.url)) {
+      // Never navigate away from what a person is doing in the window, such as a verification.
+      if (s.viewers.size)
+        throw new ApiError(409, 'BINANCE_BROWSER_IN_USE', '请先在登录窗口中打开币安聊天页，再继续');
+      await cdp.command('Page.navigate', { url: home }, s.target);
+      for (let attempt = 0; attempt < 40 && !onBinance(main?.url); attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        main = await frame();
+      }
+      if (!onBinance(main?.url)) throw new ApiError(504, 'BINANCE_BROWSER_TIMEOUT', '币安聊天页打开超时');
+    }
+    // An isolated world, like an extension content script: same cookies and origin as the page,
+    // but invisible to the page's own scripts.
+    const world = await cdp.command(
+      'Page.createIsolatedWorld',
+      { frameId: main.id, worldName: 'qsb-binance' },
+      s.target,
+    );
+    const evaluate = async (expression: string) => {
+      const result = await cdp.command(
+        'Runtime.evaluate',
+        { expression, contextId: world.executionContextId, awaitPromise: true, returnByValue: true },
+        s.target,
+      );
+      if (result.exceptionDetails) throw new Error('page script failed');
+      return result.result?.value;
+    };
+    await evaluate(hostedPageScript());
+    const channel = new HostedChannel(evaluate, () => {
+      if (s.channel === channel) s.channel = undefined;
+    });
+    if (this.session !== s) {
+      channel.close();
+      throw new ApiError(409, 'BINANCE_BROWSER_CLOSED', '服务器浏览器已关闭');
+    }
+    s.channel = channel;
+    return channel;
+  }
+  /** Starts the account's chat browser again without a viewer, retrying at most once a minute. */
+  host(id: string) {
+    if (!this.config.binanceBrowserEnabled || this.closing || this.hosting) return;
+    if (Date.now() - this.hostFailedAt < 60_000) return;
+    this.hosting = this.start(id, '系统', { keep: true, url: home })
+      .catch((error) => {
+        this.hostFailedAt = Date.now();
+        log.warn('binance chat browser restart failed', { account: id, error });
+      })
+      .finally(() => {
+        this.hosting = undefined;
+      });
+  }
   page(s: Session, value: unknown) {
     try {
       const url = new URL(String(value));
@@ -387,13 +533,15 @@ export class BinanceBrowser {
       if (!web_token || !csrf_cookie)
         throw new ApiError(409, 'BINANCE_LOGIN_REQUIRED', '请先在窗口完成币安登录，再点击连接此账号');
       if (this.session !== s) throw new ApiError(409, 'BINANCE_BROWSER_CLOSED', '登录窗口已关闭');
+      // Validation and all later traffic run inside this page, which carries the verification.
       const result = await this.adopt(
         account,
         { mode: 'direct', web_token, csrf_cookie, ...(device_id ? { device_id } : {}) },
         actor,
         s.abort.signal,
+        { hosted: true },
       );
-      if (this.session === s) this.stop(id);
+      if (this.session === s) this.keep(s);
       return result;
     } finally {
       s.switching = false;
@@ -404,12 +552,16 @@ export class BinanceBrowser {
     await s.cdp!.command('Page.navigate', { url: destinations[destination] }, s.target);
     return { navigated: true };
   }
-  stop(id?: string, windowId?: string) {
+  /** Closes the browser. A kept browser carries the chat, so closing its window leaves it running. */
+  stop(id?: string, windowId?: string, force = false) {
     const s = this.session;
     if (!s || (id && s.accountId !== id) || (windowId && s.id !== windowId)) return false;
+    if (s.keep && !force) return false;
     this.session = undefined;
     s.abort.abort();
     clearTimeout(s.expiry);
+    clearInterval(s.watcher);
+    s.channel?.close();
     s.screenshot = undefined;
     clearTimeout(s.ackTimer);
     s.ackTimer = undefined;
@@ -458,6 +610,7 @@ export class BinanceBrowser {
           s.viewers.add(ws);
           ws.on('error', () => {});
           this.deliver(s, ws);
+          this.cast(s);
           if (s.page) ws.send(JSON.stringify({ type: 'page', url: s.page }));
           let count = 0,
             since = Date.now();
@@ -475,6 +628,7 @@ export class BinanceBrowser {
             clearInterval(check);
             s.viewers.delete(ws);
             s.flow?.delete(ws);
+            this.cast(s);
           });
           ws.on('message', (raw) => {
             void (async () => {
@@ -532,7 +686,7 @@ export class BinanceBrowser {
   }
   close() {
     this.closing = true;
-    this.stop();
+    this.stop(undefined, undefined, true);
     this.server?.close();
   }
   onModuleDestroy() {

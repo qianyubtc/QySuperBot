@@ -616,7 +616,7 @@ export default function Accounts() {
           description={
             import.meta.env.MODE === 'demo'
               ? '本地模拟连接流程，不打开币安，不采集登录信息。'
-              : '这是 VPS 上的独立浏览器，请在画面内完成登录。登录窗口最长保留 15 分钟。'
+              : '这是服务器上的独立浏览器，请在画面内由你本人完成登录和验证。连接后它会保持运行并负责同步，关闭窗口不影响同步。'
           }
           close={closeBinanceLogin}
         >
@@ -627,7 +627,7 @@ export default function Accounts() {
             relogin={!!binanceLogin.connection?.needs_relogin}
             connected={(warning) => {
               setBinanceLogin(null);
-              toast(warning || '币安登录验证通过，已恢复服务器同步，原群选择已保留', !!warning);
+              toast(warning || '币安登录验证通过，服务器浏览器已开始同步，原群选择已保留', !!warning);
               void refresh();
             }}
           />

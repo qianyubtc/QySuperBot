@@ -9,6 +9,7 @@ import { SecretBox } from '../src/security.ts';
 import { BinanceDirect, binanceTokenMetadata, createDirectClient } from '../src/binance-direct.ts';
 import type { ChatClient } from '../../../packages/binance-chat/client.js';
 import { testPng } from './image-fixture.ts';
+import { binanceConnection } from '../src/binance-health.ts';
 
 const credentials = {
   mode: 'direct' as const,
@@ -491,4 +492,56 @@ test('server CSRF derivation matches the official browser scheme and forwards on
   } finally {
     client.close();
   }
+});
+
+test('a hosted connection validates and syncs through the verified browser page, never a separate server connection', async () => {
+  const a = await account(),
+    { direct, instances } = fixture();
+  const page: string[] = [];
+  direct.hosted = () => ({
+    async request(message) {
+      page.push(message.operation);
+      if (message.operation === 'profile') return { chatUserId: '123' };
+      if (message.operation === 'group') return group;
+      if (message.operation === 'history') return { messages: [] };
+      return {};
+    },
+    async checkConnection() {
+      page.push('socket');
+      return { connection: 'open' as const, token_format: 'opaque' as const, token_expires_at: null };
+    },
+    close() {},
+  });
+  s.binance.direct = direct;
+  await s.binance.authentication(a, credentials, 'test', undefined, { hosted: true });
+  let current = await s.accounts.get(a.id);
+  assert.equal(current.settings.direct_auth.hosted, true);
+  assert.deepEqual(page, ['profile', 'group', 'history', 'socket']);
+  // The server never opened its own connection with the copied credentials.
+  assert.equal(instances.length, 0);
+
+  // The browser keeps its own Binance session, so the copied token's date does not stop syncing.
+  await s.db.query(
+    `UPDATE accounts SET status='online',
+      settings=jsonb_set(settings,'{direct_auth,expires_at}',to_jsonb($2::text)) WHERE id=$1`,
+    [a.id, new Date(Date.now() - 60_000).toISOString()],
+  );
+  current = await s.accounts.get(a.id);
+  assert.deepEqual(await direct.request(current, 'history', { group_id: '10001' }), { messages: [] });
+  assert.equal(instances.length, 0);
+  const healthy = binanceConnection(current, undefined, true);
+  assert.equal(healthy.hosted, true);
+  assert.equal(healthy.title, '服务器浏览器同步正常');
+  assert.equal(healthy.needs_relogin, false);
+
+  // A 403 from Binance asks the person to pass the verification in the login window.
+  const blocked = binanceConnection(
+    current,
+    { session_id: current.session_id, issues: { history: { kind: 'access_blocked' } } } as any,
+    true,
+  );
+  assert.equal(blocked.state, 'access_blocked');
+  assert.equal(blocked.needs_relogin, true);
+  assert.match(blocked.message, /人机验证/);
+  direct.close();
 });

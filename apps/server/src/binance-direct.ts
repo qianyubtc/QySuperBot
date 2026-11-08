@@ -201,6 +201,8 @@ export class BinanceDirect {
   clients = new Map<string, { session: string; client: ChatClient }>();
   validating = new Set<string>();
   inFlight = new Map<string, number>();
+  /** The client that runs inside the server's verified Chrome page (see binance-hosted.ts). */
+  hosted?: (accountId: string, beforeSend: (groupId: string) => Promise<void>) => ChatClient;
   constructor(
     readonly db: Database,
     readonly box: SecretBox,
@@ -212,8 +214,11 @@ export class BinanceDirect {
     input: unknown,
     validateGroup: (id: string, data: unknown) => unknown,
     signal?: AbortSignal,
+    options: { hosted?: boolean } = {},
   ) {
     const credentials = binanceAuthentication.parse(input);
+    if (options.hosted && !this.hosted)
+      throw new ApiError(409, 'BINANCE_BROWSER_UNAVAILABLE', '此服务器尚未启用币安登录窗口');
     if (credentials.mode !== 'direct') throw new ApiError(400, 'BINANCE_MODE', '请选择服务器直连模式');
     if (this.validating.has(account.id))
       throw new ApiError(409, 'BINANCE_BUSY', '此账号正在验证令牌，请稍后再试');
@@ -229,7 +234,8 @@ export class BinanceDirect {
     };
     try {
       checkAbort();
-      client = this.factory(credentials, (group) => this.beforeSend(account.id, fence.session, group));
+      const beforeSend = (group: string) => this.beforeSend(account.id, fence.session, group);
+      client = options.hosted ? this.hosted!(account.id, beforeSend) : this.factory(credentials, beforeSend);
       signal?.addEventListener('abort', aborted, { once: true });
       const profile = z
         .object({ chatUserId: z.string().regex(/^\d+$/) })
@@ -254,7 +260,15 @@ export class BinanceDirect {
         });
       const socket = await client.checkConnection(profile.chatUserId);
       checkAbort();
-      return { client, fence, credentials, identity: profile.chatUserId, metadata, socket };
+      return {
+        client,
+        fence,
+        credentials,
+        identity: profile.chatUserId,
+        metadata,
+        socket,
+        hosted: !!options.hosted,
+      };
     } catch (error) {
       client?.close();
       if (error instanceof ApiError) throw error;
@@ -305,6 +319,7 @@ export class BinanceDirect {
               direct_auth: {
                 ...prepared.metadata,
                 configured_at: new Date().toISOString(),
+                ...(prepared.hosted ? { hosted: true } : {}),
               },
             }),
           ],
@@ -347,7 +362,9 @@ export class BinanceDirect {
     if (params.group_id && !account.settings.group_ids.includes(params.group_id))
       throw new ApiError(403, 'BINANCE_GROUP_SCOPE', '此币安群不在连接授权范围内');
     const started = beginBinanceCheck();
-    const expiresAt = account.settings.direct_auth?.expires_at;
+    // A hosted browser keeps its own Binance session alive; the copied token's date does not apply.
+    const hosted = account.settings.direct_auth?.hosted === true;
+    const expiresAt = hosted ? undefined : account.settings.direct_auth?.expires_at;
     if (expiresAt && Date.parse(expiresAt) <= Date.now()) {
       if (this.clients.get(account.id)?.session === account.session_id) this.disconnect(account.id);
       const error = new ApiError(409, 'BINANCE_TOKEN_EXPIRED', '币安登录已失效，请重新登录并连接此账号');
@@ -365,6 +382,17 @@ export class BinanceDirect {
     if ((this.inFlight.get(account.id) ?? 0) >= 16)
       throw new ApiError(429, 'BINANCE_BUSY', '币安直连请求过多，请稍后再试');
     let entry = this.clients.get(account.id);
+    if ((!entry || entry.session !== account.session_id) && hosted) {
+      this.disconnect(account.id);
+      if (!this.hosted)
+        throw new ApiError(409, 'BINANCE_BROWSER_UNAVAILABLE', '此服务器尚未启用币安登录窗口');
+      const session = account.session_id;
+      entry = {
+        session,
+        client: this.hosted(account.id, (group) => this.beforeSend(account.id, session, group)),
+      };
+      this.clients.set(account.id, entry);
+    }
     if (!entry || entry.session !== account.session_id) {
       this.disconnect(account.id);
       const credentials = binanceAuthentication.parse(JSON.parse(this.box.open(account.secret_box)));

@@ -284,6 +284,85 @@ test('browser adopts only minimal URL-scoped credentials and preserves the windo
   browser.stop();
   assert.equal(runtime.abort.signal.aborted, true);
 });
+test('a connected window becomes the kept chat browser: it outlives the window, streams only while watched and never navigates under a viewer', async () => {
+  const { a, runtime } = await fixture();
+  const calls: Array<{ method: string; params: any }> = [];
+  let url = 'https://www.binance.com/zh-CN/square/chat';
+  const events: any[] = [];
+  (runtime as any).casting = true;
+  runtime.cdp.command = async (method: string, params: any) => {
+    calls.push({ method, params });
+    if (method === 'Network.getCookies')
+      return {
+        cookies: [
+          { name: 'p20t', value: 'fixture-web-login', path: '/' },
+          { name: 'cr00', value: 'fixture-csrf', path: '/' },
+        ],
+      };
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main', url } } };
+    if (method === 'Page.navigate') url = params.url;
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: 7 };
+    if (method === 'Runtime.evaluate') {
+      const started = /__qsbBinance\.start\((\d+)/.exec(params.expression);
+      if (started) {
+        events.push({ type: 'done', job: Number(started[1]), ok: true, data: { chatUserId: '42' } });
+        return { result: { value: true } };
+      }
+      if (params.expression.includes('__qsbBinance.next(')) return { result: { value: events.splice(0) } };
+      return { result: { value: 'installed' } };
+    }
+    return {};
+  };
+  let options: any;
+  const browser: BinanceBrowser = new BinanceBrowser(
+    s.config,
+    s.db,
+    s.auth,
+    async (_account, _value, _actor, _signal, o): Promise<unknown> => {
+      options = o;
+      // Validation already runs inside the page.
+      return browser.hostedClient(a.id).request({ operation: 'profile' });
+    },
+  );
+  s.binanceBrowser.session = undefined;
+  browser.session = runtime as any;
+  assert.deepEqual(await browser.connect(a.id, 'test'), { chatUserId: '42' });
+  assert.deepEqual(options, { hosted: true });
+  const evaluated = calls.filter((c) => c.method === 'Runtime.evaluate');
+  assert(evaluated.every((c) => c.params.contextId === 7 && c.params.returnByValue));
+  assert(calls.some((c) => c.method === 'Page.createIsolatedWorld' && c.params.worldName === 'qsb-binance'));
+
+  // Kept: no time limit, closing the window leaves it running, and an unwatched browser stops painting.
+  assert.equal(browser.status(a.id).kept, true);
+  assert.equal(browser.status(a.id).expires_at, null);
+  assert.equal(browser.stop(a.id, runtime.id), false);
+  assert.equal(browser.session, runtime);
+  assert.equal(runtime.abort.signal.aborted, false);
+  assert.equal(calls.at(-1)?.method, 'Page.stopScreencast');
+  runtime.viewers.add({ readyState: 1 } as any);
+  (browser as any).cast(runtime);
+  assert.equal(calls.at(-1)?.method, 'Page.startScreencast');
+
+  // While someone is in the window (say, passing a verification), the browser is never navigated.
+  url = 'https://accounts.binance.com/zh-CN/login';
+  (runtime as any).channel.close();
+  await assert.rejects(
+    browser.hostedClient(a.id).request({ operation: 'profile' }),
+    (error: any) => error.code === 'BINANCE_BROWSER_IN_USE',
+  );
+  assert(!calls.some((c) => c.method === 'Page.navigate'));
+  // Unwatched, it returns to the chat page by itself and carries on.
+  runtime.viewers.clear();
+  assert.deepEqual(await browser.hostedClient(a.id).request({ operation: 'profile' }), { chatUserId: '42' });
+  assert.equal(
+    calls.filter((c) => c.method === 'Page.navigate')[0]?.params.url,
+    'https://www.binance.com/zh-CN/square/chat',
+  );
+
+  // Pausing the account (a forced stop) does close it.
+  assert.equal(browser.stop(a.id, undefined, true), true);
+  assert.equal(runtime.abort.signal.aborted, true);
+});
 test('missing login and paused accounts cannot be adopted; stopping aborts the current login session', async () => {
   const { a, runtime } = await fixture();
   runtime.cdp.command = async () => ({ cookies: [] });

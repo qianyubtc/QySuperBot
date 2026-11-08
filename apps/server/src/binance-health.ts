@@ -197,6 +197,8 @@ export function hasBinanceLoginIssue(account: Row, raw?: Health) {
 
 export function binanceConnection(account: Row, raw?: Health, loginAvailable = false) {
   const direct = account.settings?.transport === 'direct';
+  // Hosted: the server's own Chrome, verified by a person in the login window, carries the chat.
+  const hosted = direct && account.settings?.direct_auth?.hosted === true;
   const health = raw?.session_id === account.session_id ? raw : undefined;
   const issues = Object.values(health?.issues ?? {}).filter(
     (issue) =>
@@ -205,14 +207,17 @@ export function binanceConnection(account: Row, raw?: Health, loginAvailable = f
   const issue = [...issues].sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind))[0];
   const expired =
     direct &&
+    !hosted &&
     account.settings.direct_auth?.expires_at &&
     Date.parse(account.settings.direct_auth.expires_at) <= Date.now();
   const syncSince = health?.synced_at ?? account.settings.direct_auth?.configured_at;
   let state = 'connected',
-    title = direct ? '服务器直连正常' : '浏览器桥接在线',
-    message = direct
-      ? '无需保持浏览器或插件运行，新消息由服务器同步。'
-      : '请保持已登录的币安聊天页和扩展运行。';
+    title = hosted ? '服务器浏览器同步正常' : direct ? '服务器直连正常' : '浏览器桥接在线',
+    message = hosted
+      ? '由服务器上已登录并通过验证的浏览器同步消息；币安再次要求验证时，打开登录窗口由你本人完成。'
+      : direct
+        ? '无需保持浏览器或插件运行，新消息由服务器同步。'
+        : '请保持已登录的币安聊天页和扩展运行。';
   if (account.status === 'paused') {
     state = 'paused';
     title = '连接已暂停';
@@ -232,7 +237,10 @@ export function binanceConnection(account: Row, raw?: Health, loginAvailable = f
           check_required: '连接待检查',
         } as Record<string, string>
       )[state] ?? '连接待检查';
-    message = messages[issue.kind];
+    message =
+      hosted && issue.kind === 'access_blocked'
+        ? '币安要求人机验证：打开登录窗口，点“广场”在画面中由你本人完成验证，再点“连接此账号”。'
+        : messages[issue.kind];
   } else if (['connecting', 'configuring'].includes(account.status)) {
     state = 'connecting';
     title = '等待连接';
@@ -256,7 +264,10 @@ export function binanceConnection(account: Row, raw?: Health, loginAvailable = f
     state,
     title,
     message,
-    needs_relogin: ['login_required', 'identity_changed'].includes(state),
+    // A hosted browser blocked by Binance needs a person to pass the verification in the window.
+    needs_relogin:
+      ['login_required', 'identity_changed'].includes(state) || (hosted && state === 'access_blocked'),
+    hosted,
     login_available: loginAvailable,
     checked_at: health?.checked_at ?? null,
     verified_at: health?.verified_at ?? null,

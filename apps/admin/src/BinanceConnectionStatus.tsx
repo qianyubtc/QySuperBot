@@ -21,11 +21,14 @@ export default function BinanceConnectionStatus({ account }: { account: Record<s
   const times = [
     ['登录验证', time(connection.verified_at) ?? '待检查', time(connection.verified_at)],
     ['同步检查', time(connection.synced_at) ?? '待检查', time(connection.synced_at)],
-    [
-      '令牌到期',
-      time(connection.expires_at) ?? '未提供',
-      connection.expires_at ? null : '平台未提供有效期，以实际验证为准',
-    ],
+    // A hosted browser keeps its own Binance session, so the copied token's expiry does not apply.
+    connection.hosted
+      ? ['同步方式', '服务器浏览器', '由服务器上已通过验证的浏览器收发消息']
+      : [
+          '令牌到期',
+          time(connection.expires_at) ?? '未提供',
+          connection.expires_at ? null : '平台未提供有效期，以实际验证为准',
+        ],
   ] as const;
   return (
     <div

@@ -1062,12 +1062,18 @@ export class BinanceBridge {
     this.peers.get(id)?.socket.terminate();
     this.direct.disconnect(id);
   }
-  async authentication(account: Row, input: unknown, actor: string, signal?: AbortSignal) {
+  async authentication(
+    account: Row,
+    input: unknown,
+    actor: string,
+    signal?: AbortSignal,
+    options: { hosted?: boolean } = {},
+  ) {
     if (account.kind !== 'binance') throw new ApiError(400, 'UNSUPPORTED', '此入口仅用于币安聊天');
     if (account.status === 'paused') throw new ApiError(409, 'ACCOUNT_PAUSED', '请先恢复此账号连接');
     const value = binanceAuthentication.parse(input);
     if (value.mode === 'direct') {
-      const prepared = await this.direct.prepare(account, value, binanceGroup, signal);
+      const prepared = await this.direct.prepare(account, value, binanceGroup, signal, options);
       await this.direct.save(account, prepared, actor, signal);
       // The old bridge cannot change the new session's state when its close handler runs.
       this.peers.get(account.id)?.socket.terminate();

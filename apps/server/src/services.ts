@@ -41,8 +41,8 @@ export async function createServices(
       config,
       db,
       auth,
-      async (account, credentials, actor, signal) => {
-        const result = await binance.authentication(account, credentials, actor, signal);
+      async (account, credentials, actor, signal, options) => {
+        const result = await binance.authentication(account, credentials, actor, signal, options);
         try {
           await accounts.refresh(account.id, actor);
         } catch {
@@ -51,6 +51,7 @@ export async function createServices(
         return result;
       },
     );
+    binance.direct.hosted = (id, beforeSend) => binanceBrowser.hostedClient(id, beforeSend);
     const jobs = new JobsService(ctx);
     const keywords = new KeywordRules(ctx, jobs);
     const templates = new TemplatesService(ctx);

@@ -354,7 +354,7 @@ class ApiController {
       await s.accounts.get(account[1]!);
       await s.db.query("UPDATE accounts SET status='paused' WHERE id=$1", [account[1]]);
       s.binance.disconnect(account[1]!);
-      s.binanceBrowser.stop(account[1]!);
+      s.binanceBrowser.stop(account[1]!, undefined, true);
       await audit(s.db, principal.name, 'account.paused', account[1]!);
       return { paused: true };
     }
