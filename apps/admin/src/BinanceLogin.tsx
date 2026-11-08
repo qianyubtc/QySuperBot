@@ -26,6 +26,8 @@ export default function BinanceLogin({
   const [page, setPage] = useState('正在打开官方登录页');
   const [revision, setRevision] = useState(0);
   const moveTime = useRef(0);
+  const pendingMove = useRef<Record<string, unknown> | null>(null);
+  const moveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -34,6 +36,7 @@ export default function BinanceLogin({
     node?.addEventListener('wheel', preventScroll, { passive: false });
     return () => {
       mounted.current = false;
+      clearTimeout(moveTimer.current);
       node?.removeEventListener('wheel', preventScroll);
     };
   }, []);
@@ -51,6 +54,9 @@ export default function BinanceLogin({
       image.onload = () => {
         if (!active || ws.readyState !== WebSocket.OPEN) return;
         canvas.current?.getContext('2d')?.drawImage(image, 0, 0, 1200, 800);
+        // The server sends the next (newest) frame only after this, so a slow link never
+        // queues up stale frames ahead of the result of a click.
+        ws.send(JSON.stringify({ type: 'frame_ack' }));
         setReady(true);
         setState('窗口已连接 · 点击画面即可操作');
         drawing = false;
@@ -77,14 +83,18 @@ export default function BinanceLogin({
         /* Incomplete display frames may be skipped. */
       }
     };
-    ws.onclose = () => {
-      if (active) {
-        setReady(false);
-        setState('窗口已断开，可重新连接；超过 15 分钟请关闭后重新打开。');
-      }
+    ws.onclose = (event) => {
+      if (!active) return;
+      setReady(false);
+      setState(
+        event.code === 1008
+          ? '登录窗口已失效（会话过期、账号已暂停或超时），请关闭后重新打开。'
+          : '窗口已断开，可重新连接；超过 15 分钟请关闭后重新打开。',
+      );
     };
     ws.onerror = () => {
-      if (active) setState('窗口连接失败，请尝试重新连接。');
+      if (active)
+        setState('窗口连接失败：若后台经过反向代理，请确认已转发 WebSocket（Upgrade / Connection）。');
     };
     const ping = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
@@ -102,17 +112,36 @@ export default function BinanceLogin({
     if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify(value));
   }
   function pointer(e: React.PointerEvent<HTMLCanvasElement>, action: string) {
-    if (action === 'mouseMoved' && Date.now() - moveTime.current < 40) return;
-    moveTime.current = Date.now();
     const rect = e.currentTarget.getBoundingClientRect();
-    send({
+    const value = {
       type: 'pointer',
       action,
       x: Math.max(0, Math.min(1200, ((e.clientX - rect.left) / rect.width) * 1200)),
       y: Math.max(0, Math.min(800, ((e.clientY - rect.top) / rect.height) * 800)),
       button: action === 'mouseMoved' ? 'none' : (['left', 'middle', 'right'][e.button] ?? 'none'),
       buttons: e.buttons & 7,
-    });
+    };
+    if (action === 'mouseMoved') {
+      // At most one move every 40 ms, but the last position always arrives (hover menus).
+      pendingMove.current = value;
+      if (!moveTimer.current)
+        moveTimer.current = setTimeout(
+          () => {
+            moveTimer.current = undefined;
+            moveTime.current = Date.now();
+            if (pendingMove.current) send(pendingMove.current);
+            pendingMove.current = null;
+          },
+          Math.max(0, moveTime.current + 40 - Date.now()),
+        );
+      return;
+    }
+    // A press or release carries its own position; an older queued move must not follow it.
+    clearTimeout(moveTimer.current);
+    moveTimer.current = undefined;
+    pendingMove.current = null;
+    moveTime.current = Date.now();
+    send(value);
   }
   function key(e: React.KeyboardEvent<HTMLCanvasElement>, action: 'keyDown' | 'keyUp') {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
@@ -271,7 +300,7 @@ export default function BinanceLogin({
         </div>
       )}
       <footer className="login-foot">
-        <small>{ready ? state : '登录凭据加密保存在本服务器'}</small>
+        <small>{ready ? '登录凭据加密保存在本服务器' : state}</small>
         <button className="btn" disabled={busy} onClick={close}>
           关闭窗口
         </button>

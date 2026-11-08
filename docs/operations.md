@@ -4,7 +4,7 @@
 
 `npm ci && npm run dev` 同时启动 NestJS 与 Vite。网页 `http://127.0.0.1:5174`，开发代理把 `/api` 转发到 3000。Ctrl+C 关闭两端服务，配置读取根目录 `.env`。
 
-`npm run check` 包含类型检查、业务、数据库、协议以及只绑定本机临时端口的 HTTP 测试。`npm run build && npm start` 从构建产物启动。健康检查：`GET /api/v1/health`。
+`npm run check` 包含类型检查、业务、数据库、协议以及只绑定本机临时端口的 HTTP 测试，并运行管理台组件测试（`npm run test:admin`，Vitest + jsdom，覆盖登录与 ⌘K 快速查找）。`npm run build && npm start` 从构建产物启动。健康检查：`GET /api/v1/health`，会实际查询数据库，数据库不可用时返回 503（Docker healthcheck 使用该地址）。
 
 ## Telegram 成员管理
 
@@ -44,7 +44,22 @@ Telegram 群面板的“成员”可查看已知成员并直接处理，工作�
 | `ALLOW_PRIVATE_CONNECTORS` | 默认 false；连接本机/私网 QQ 或自有服务时显式设 true，链路本地地址仍拒绝                                 |
 | `QQ_LOCAL_PORT`            | 可选；仅 QQ 连接可访问 `http://127.0.0.1:<端口>`，其他私网地址仍按默认策略拒绝；同机 NapCat 优先使用此项 |
 
-密码用 scrypt 散列，平台凭据用 AES-256-GCM 加密，项目 Key 仅存散列。HttpOnly / SameSite=Strict 会话，写请求校验 CSRF。登录失败按真实客户端地址限流：15 分钟内同一地址对同一用户名最多 10 次、对所有用户名合计最多 30 次，并发请求也计入；不设整个账号的锁定，其他地址仍可登录。当前只有一个管理员，未提供网页密码修改/找回或密钥轮换。消息和审计持续保留；原始入站事件 30 天后清理，未被任何通知、规则、模板、任务或消息引用的上传图片 7 天后清理。服务日志每行一条 JSON，写入 stderr（systemd 下由 journald 收集），并去除令牌、Cookie、密码等凭据。
+密码用 scrypt 散列，平台凭据用 AES-256-GCM 加密，项目 Key 仅存散列。HttpOnly / SameSite=Strict 会话，写请求校验 CSRF。登录失败按真实客户端地址限流：15 分钟内同一地址对同一用户名最多 10 次、对所有用户名合计最多 30 次，并发请求也计入；不设整个账号的锁定，其他地址仍可登录。当前只有一个管理员，未提供网页密码修改/找回或密钥轮换。服务日志每行一条 JSON，写入 stderr（systemd 下由 journald 收集），并去除令牌、Cookie、密码等凭据。
+
+## 数据保留
+
+清理由内置 worker 每小时执行，每次最多处理 5000 行，不会长时间占用数据库。
+
+| 环境变量                  | 默认 | 行为                                                               |
+| ------------------------- | ---- | ------------------------------------------------------------------ |
+| `RETENTION_INBOX_DAYS`    | 30   | 删除更早的原始入站事件；只用于幂等与诊断，可放心设小                 |
+| `RETENTION_MESSAGE_DAYS`  | 0    | 删除更早的聊天消息；`0` 表示永久保留                                 |
+| `RETENTION_AUDIT_DAYS`    | 0    | 删除更早的操作日志；`0` 表示永久保留                                 |
+| `RETENTION_JOBS_DAYS`     | 0    | 删除更早的已结束投递任务与执行尝试；`0` 表示永久保留                 |
+
+消息和审计只在显式配置窗口后才会删除，升级不会自行清理历史。配置为正数时，以下记录仍会保留：被关键词规则命中的消息（保留处理证据）、仍关联待执行或待核对投递的消息，以及被通知、规则、模板或消息引用的上传图片。任务清理只处理 `succeeded` / `failed` / `cancelled` / `expired`，`unknown`（结果待核对）永不自动删除；被关键词命中、成员处理、入群申请或验证记录引用的任务同样保留。对应保留窗口的消息墓碑、未被引用的 7 天前图片也一并清理。清理结果写入服务日志。启用任务清理后，概览里的投递计数只统计保留期内的任务。
+
+退出时进程会先停止接收新请求，再排空 worker 与数据库连接；本地数据库锁随进程退出释放，强杀后遗留的锁文件会在下次启动的报错中说明其进程是否仍在运行。
 
 ## Telegram
 
@@ -130,6 +145,27 @@ VPS 的 NapCat v4.18.41 使用受版本散列保护的成员查询修复：强�
 `/api/v1/conversations/:id/stream` 使用 SSE，浏览器通过同源管理员 Cookie 鉴权，无需在 URL 中传凭据。每秒读取数据库快照，有变化时推送；每 15 秒发送心跳。注销或会话过期会结束连接，重连后补上最近 100 条窗口内的消息及投递状态。首次显示最近 100 条，网页通过 `GET /api/v1/conversations/:id/history?before=<消息记录ID>&limit=50` 向前翻页。游标绑定逻辑群及消息记录，使用 `(created_at,id)` 排序，避免同一时间消息重复或遗漏。此端点仅接受管理员会话；分页读取后台已保存的消息，不向平台补抓接入前历史。
 
 HTTPS 代理应为此路径关闭响应缓冲和缓存、允许长连接，并把读取超时设为至少 60 秒。例如 Nginx 在对应 location 内设置 `proxy_buffering off; proxy_cache off; proxy_read_timeout 60s;`；服务同时返回 `X-Accel-Buffering: no`。CDN 也需允许流式响应，否则网页更新可能被延迟。连接缓慢且持续无法写出时，服务会结束连接，由浏览器重新连接。
+
+### WebSocket（币安登录窗口）
+
+“连接账号 → 登录币安”的窗口通过 `/api/v1/accounts/:id/binance-browser/socket` 推送画面并接收点击与键盘输入。这是一条同源 WebSocket，反向代理**必须转发升级请求**，否则对话框会一直停在“窗口连接失败”，画面和操作都不会出现。Nginx 除了上面的 SSE 设置外还要在 `http` 块声明升级映射，并在 `/api/` 的 location 内转发：
+
+```nginx
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+location /api/ {
+  proxy_pass http://127.0.0.1:3000;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection $connection_upgrade;
+  proxy_set_header Host $host;
+}
+```
+
+`Host $host` 让服务把浏览器发来的 `Origin` 与请求自身的 Host 对照，因此控制台域名与 `PUBLIC_ORIGIN` 不一致时也能正常连上；两者必须同时指向控制台地址才能通过同源校验。本地 `npm run dev` 时 Vite 已代为转发 `/api` 的 WebSocket，无需额外配置。
 
 数据库启动时自动添加消息引用与话题字段，现有记录保留。真实平台引用能否成功仍取决于原消息是否存在、当前账号权限及连接器实现；Telegram 引用丢失时不会自动降级为无引用发送。
 

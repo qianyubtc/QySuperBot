@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
-import { mkdir, open, unlink } from 'node:fs/promises';
+import { unlinkSync } from 'node:fs';
+import { mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Config } from './config.ts';
 import { migrate } from './migration.ts';
@@ -21,6 +22,24 @@ export interface Database extends Sql {
 }
 
 const writeTarget = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([a-z_][a-z0-9_]*)/gi;
+/**
+ * A lock left behind by a crash or a force-killed process must not look like a database that is
+ * still in use. Only advise deleting the file when the recorded process is provably gone.
+ */
+async function describeLock(lockPath: string): Promise<string> {
+  const pid = Number((await readFile(lockPath, 'utf8').catch(() => '')).trim());
+  if (!Number.isInteger(pid) || pid <= 0)
+    return `The lock file is unreadable; after a crash verify no other process is running before removing it.`;
+  try {
+    process.kill(pid, 0);
+    return `Process ${pid} is still running; stop it first (or point DATA_DIR somewhere else).`;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user: treat it as alive.
+    if ((error as NodeJS.ErrnoException).code === 'EPERM')
+      return `Process ${pid} is still running under another user; stop it first.`;
+    return `Process ${pid} is no longer running, so the lock is stale. Delete ${lockPath} to start.`;
+  }
+}
 // Records only writes that changed rows, so no-op upserts and conditional updates stay quiet.
 class Changes {
   private versions = new Map<string, number>();
@@ -100,15 +119,29 @@ export async function openDatabase(config: Pick<Config, 'databaseUrl' | 'dataDir
     try {
       const lock = await open(lockPath, 'wx', 0o600);
       await lock.writeFile(String(process.pid));
+      let held = true;
+      // A forced or abnormal exit skips the async release, and a leftover lock then blocks the
+      // next start until someone removes it by hand. Drop it synchronously on the way out.
+      const drop = () => {
+        if (!held) return;
+        held = false;
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          /* Already removed. */
+        }
+      };
+      process.on('exit', drop);
       release = async () => {
+        if (!held) return;
+        held = false;
         await lock.close();
         await unlink(lockPath);
+        process.off('exit', drop);
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST')
-        throw new Error(
-          `Local database is locked: ${lockPath}. Stop the other process; after a crash verify its PID is no longer running before removing this file.`,
-        );
+        throw new Error(`Local database is locked: ${lockPath}. ${await describeLock(lockPath)}`);
       throw error;
     }
   }

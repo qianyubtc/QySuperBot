@@ -102,7 +102,13 @@ export class AuthService {
         ])
       )[0];
       if (!project) throw new ApiError(401, 'UNAUTHORIZED', 'API Key 无效或已撤销');
-      await this.db.query('UPDATE projects SET last_used_at=now() WHERE id=$1', [project.id]);
+      // A polling integration reads every few seconds; one write a minute is enough to show usage
+      // without turning every read into a database write.
+      await this.db.query(
+        `UPDATE projects SET last_used_at=now() WHERE id=$1
+        AND (last_used_at IS NULL OR last_used_at < now()-interval '1 minute')`,
+        [project.id],
+      );
       return {
         kind: 'project',
         id: project.id,

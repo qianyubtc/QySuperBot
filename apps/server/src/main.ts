@@ -20,11 +20,32 @@ console.log(
   `千羽 Superbot · http://${config.host}:${config.port} · ${services.db.mode === 'local' ? '本地持久化 PostgreSQL' : 'PostgreSQL'}`,
 );
 let stopping = false;
-async function close() {
+const shutdownTimeoutMs = 20_000;
+async function close(signal: string) {
   if (stopping) return;
   stopping = true;
-  await app.close();
-  await services.close();
+  log.info('shutting down', { signal });
+  // A slow platform call or a half-open socket must not keep the process — and the local database
+  // lock — alive forever. The drain still runs; this only bounds how long it may take.
+  const forced = setTimeout(() => {
+    log.error('shutdown did not finish in time; exiting', { after_ms: shutdownTimeoutMs });
+    process.exit(1);
+  }, shutdownTimeoutMs);
+  forced.unref();
+  try {
+    await app.close();
+    await services.close();
+  } catch (error) {
+    log.error('shutdown failed', { error });
+    process.exitCode = 1;
+  } finally {
+    clearTimeout(forced);
+  }
 }
-process.on('SIGINT', () => void close());
-process.on('SIGTERM', () => void close());
+// Duplicate signals are ignored: a supervisor such as tsx forwards the same SIGTERM to both the
+// wrapper and this process, and that must not cut a drain short and strand the database lock.
+const stop = (signal: string) => {
+  if (!stopping) void close(signal);
+};
+process.on('SIGINT', () => stop('SIGINT'));
+process.on('SIGTERM', () => stop('SIGTERM'));

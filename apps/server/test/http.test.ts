@@ -24,6 +24,9 @@ test('HTTP boundary enforces authentication, CSRF, scoped keys and raw signed bo
     await app.listen(0, '127.0.0.1');
     const base = await app.getUrl();
     const request = (path: string, options: RequestInit = {}) => fetch(base + '/api/v1' + path, options);
+    const health = await request('/health');
+    assert.equal(health.status, 200);
+    assert.equal(((await health.json()) as any).status, 'ok');
     assert.equal((await request('/overview')).status, 401);
     const setup = await request('/auth/setup', {
       method: 'POST',
@@ -69,6 +72,23 @@ test('HTTP boundary enforces authentication, CSRF, scoped keys and raw signed bo
       ).length,
       1,
     );
+    // A polling integration must not turn every read into a write on the project row.
+    const usedAt = async () =>
+      new Date(
+        (await services.db.query('SELECT last_used_at FROM projects WHERE id=$1', [project.id]))[0]!
+          .last_used_at,
+      ).getTime();
+    await services.db.query("UPDATE projects SET last_used_at=now()-interval '10 seconds' WHERE id=$1", [
+      project.id,
+    ]);
+    const beforePoll = await usedAt();
+    await request('/conversations', { headers: { authorization: `Bearer ${project.key}` } });
+    assert.equal(await usedAt(), beforePoll);
+    await services.db.query("UPDATE projects SET last_used_at=now()-interval '2 minutes' WHERE id=$1", [
+      project.id,
+    ]);
+    await request('/conversations', { headers: { authorization: `Bearer ${project.key}` } });
+    assert.ok((await usedAt()) > beforePoll);
     const c = await services.accounts.create(
       { kind: 'custom', name: 'HTTP', endpoint: 'https://example.com' },
       'test',

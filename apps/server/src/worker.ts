@@ -386,14 +386,23 @@ export class Worker {
       await recordBinanceSuccess(this.ctx.db, account, 'sync', undefined, started);
   }
   /**
-   * Hourly retention. Raw inbound events only back idempotency and diagnostics, so 30 days is
-   * ample; uploaded images that nothing references any more are removed after a week.
+   * Hourly retention. Each table is trimmed in bounded batches so one cycle never holds the
+   * database for long. Chat messages and audit rows are deleted only when the administrator sets
+   * an explicit window; a message that still backs a keyword hit or an unfinished delivery is kept.
    */
   async housekeeping() {
     this.housekeptAt = Date.now();
-    const events = await this.ctx.db.query(
-      "DELETE FROM inbox WHERE id IN (SELECT id FROM inbox WHERE received_at < now() - interval '30 days' LIMIT 5000) RETURNING id",
-    );
+    const retention = this.ctx.config.retention;
+    const batch = 5_000;
+    const removed: Record<string, number> = {};
+    if (retention.inbox > 0)
+      removed.inbox = (
+        await this.ctx.db.query(
+          `DELETE FROM inbox WHERE id IN (SELECT id FROM inbox WHERE received_at < now() - $1::int * interval '1 day'
+            ORDER BY received_at LIMIT $2) RETURNING id`,
+          [retention.inbox, batch],
+        )
+      ).length;
     const images = await this.ctx.db.query(
       `DELETE FROM uploaded_images u WHERE u.created_at < now() - interval '7 days'
         AND NOT EXISTS (SELECT 1 FROM announcements a WHERE a.image_asset_id=u.id)
@@ -403,8 +412,73 @@ export class Worker {
         AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.media @> jsonb_build_array(jsonb_build_object('asset_id', u.id)))
       RETURNING u.id`,
     );
-    if (events.length || images.length)
-      log.info('housekeeping removed old data', { inbox_events: events.length, images: images.length });
+    if (images.length) removed.images = images.length;
+    if (retention.messages > 0) {
+      // Keyword evidence and unsettled deliveries still need their message, so those rows stay.
+      removed.messages = (
+        await this.ctx.db.query(
+          `DELETE FROM messages WHERE id IN (
+            SELECT m.id FROM messages m
+            WHERE m.created_at < now() - $1::int * interval '1 day'
+              AND NOT EXISTS (SELECT 1 FROM keyword_hits k WHERE k.message_id=m.id)
+              AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.conversation_id=m.conversation_id
+                AND j.review_ref->>'message_record_id'=m.id
+                AND j.status IN ('pending','in_flight','accepted','unknown'))
+            ORDER BY m.created_at LIMIT $2
+          ) RETURNING id`,
+          [retention.messages, batch],
+        )
+      ).length;
+      // A tombstone only matters while the message it guards could still arrive.
+      removed.tombstones = (
+        await this.ctx.db.query(
+          `DELETE FROM message_tombstones WHERE (account_id,conversation_id,external_id) IN (
+            SELECT account_id,conversation_id,external_id FROM message_tombstones
+            WHERE source_at < now() - $1::int * interval '1 day' LIMIT $2
+          ) RETURNING external_id`,
+          [retention.messages, batch],
+        )
+      ).length;
+    }
+    if (retention.audit > 0)
+      removed.audit = (
+        await this.ctx.db.query(
+          `DELETE FROM audit WHERE id IN (SELECT id FROM audit WHERE created_at < now() - $1::int * interval '1 day'
+            ORDER BY created_at LIMIT $2) RETURNING id`,
+          [retention.audit, batch],
+        )
+      ).length;
+    if (retention.jobs > 0) {
+      // Only settled deliveries age out. A job that still backs keyword evidence, a member action,
+      // a join request or a verification is kept, because those rows reference it by foreign key.
+      const expired = await this.ctx.db.query(
+        `SELECT j.id FROM jobs j
+        WHERE j.status IN ('succeeded','failed','cancelled','expired')
+          AND j.created_at < now() - $1::int * interval '1 day'
+          AND NOT EXISTS (SELECT 1 FROM keyword_hits k WHERE k.job_id=j.id)
+          AND NOT EXISTS (SELECT 1 FROM member_actions a WHERE a.job_id=j.id)
+          AND NOT EXISTS (SELECT 1 FROM qq_join_requests q WHERE q.job_id=j.id)
+          AND NOT EXISTS (SELECT 1 FROM verifications v
+            WHERE v.challenge_job_id=j.id OR v.timeout_job_id=j.id OR v.failure_job_id=j.id)
+        ORDER BY j.created_at LIMIT $2`,
+        [retention.jobs, batch],
+      );
+      if (expired.length) {
+        const ids = expired.map((row) => row.id);
+        await this.ctx.db.transaction(async (tx) => {
+          await tx.query('DELETE FROM attempts WHERE job_id = ANY($1::text[])', [ids]);
+          removed.jobs = (
+            await tx.query(
+              `DELETE FROM jobs WHERE id = ANY($1::text[])
+              AND status IN ('succeeded','failed','cancelled','expired') RETURNING id`,
+              [ids],
+            )
+          ).length;
+        });
+      }
+    }
+    if (Object.values(removed).some(Boolean))
+      log.info('housekeeping removed old data', { ...removed, retention_days: retention });
   }
   private async maintenance() {
     if (this.stopped || this.busyMaintenance) return;

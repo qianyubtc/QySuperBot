@@ -143,3 +143,66 @@ test('pending chat submissions reject malformed records and bound browser storag
   assert.deepEqual(readInboxSendAttempts('sends', blocked), {});
   assert.equal(saveInboxSendAttempts('sends', attempts, blocked), false);
 });
+test('quoted messages survive reloads per room and never cross administrator boundaries', () => {
+  const storage = memory();
+  const quote = { id: 'message-123', sender_name: '小羽', content: '原始消息' };
+  assert.equal(saveInboxReplies('quotes:admin-a', { telegram: quote }, storage), true);
+  assert.deepEqual(readInboxReplies('quotes:admin-a', storage), { telegram: quote });
+  assert.equal(readInboxReplies('quotes:admin-b', storage), undefined);
+  saveInboxReplies('quotes:admin-a', { telegram: undefined, qq: quote }, storage);
+  assert.deepEqual(readInboxReplies('quotes:admin-a', storage), { qq: quote });
+});
+
+test('clearing a quote persists an empty record so an older send attempt cannot restore it', () => {
+  const storage = memory();
+  const quote = { id: 'message-123', sender_name: '小羽', content: '原始消息' };
+  saveInboxReplies('quotes', { room: quote }, storage);
+  saveInboxReplies('quotes', { room: undefined }, storage);
+  // `{}` is deliberate: the inbox only falls back to a stored send attempt when the key is absent.
+  assert.deepEqual(readInboxReplies('quotes', storage), {});
+  assert.notEqual(readInboxReplies('quotes', storage), undefined);
+});
+
+test('malformed or unavailable quote storage never blocks the inbox and stays bounded', () => {
+  const storage = memory();
+  for (const raw of ['{', 'null', '[]', '42', 'x'.repeat(512_001)]) {
+    storage.values.set('quotes', raw);
+    assert.deepEqual(readInboxReplies('quotes', storage), {});
+  }
+  storage.values.set(
+    'quotes',
+    JSON.stringify({
+      missingId: { sender_name: '无标识' },
+      numericId: { id: 42 },
+      valid: { id: 'message-1', sender_name: '小羽', content: '内容' },
+    }),
+  );
+  assert.deepEqual(Object.keys(readInboxReplies('quotes', storage)!), ['valid']);
+  const many = Object.fromEntries(
+    Array.from({ length: 40 }, (_, i) => [
+      `room-${i}`,
+      { id: `message-${i}`, sender_name: `成员 ${i}`, content: `引用 ${i}` },
+    ]),
+  );
+  saveInboxReplies('quotes', many, storage);
+  const restored = readInboxReplies('quotes', storage)!;
+  assert.equal(Object.keys(restored).length, 30);
+  assert.equal(restored['room-0'], undefined);
+  assert.equal(restored['room-39']?.id, 'message-39');
+  const blocked = {
+    getItem: () => {
+      throw Error('disabled');
+    },
+    setItem: () => {
+      throw Error('quota');
+    },
+    removeItem: () => {
+      throw Error('disabled');
+    },
+  };
+  assert.deepEqual(readInboxReplies('quotes', blocked), {});
+  assert.equal(
+    saveInboxReplies('quotes', { room: { id: 'm', sender_name: '小羽', content: '内容' } }, blocked),
+    false,
+  );
+});

@@ -56,7 +56,7 @@ export function QuickNavigate({
   const resultList = useRef<HTMLDivElement>(null);
   const queryText = query.trim().toLocaleLowerCase();
   const results = [
-    ...pages.map((p) => ({ id: p.path, title: p.label, note: '工作台页面', path: p.path })),
+    ...pages.map((p) => ({ id: p.path, title: p.label, note: '页面', path: p.path })),
     ...groups.map((g) => ({
       id: g.id,
       title: g.name,

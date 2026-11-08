@@ -41,7 +41,12 @@ export default defineConfig(({ mode }) => ({
     host: '127.0.0.1',
     port: Number(process.env.ADMIN_PORT ?? 5174),
     strictPort: true,
-    proxy: mode === 'demo' ? undefined : { '/api': `http://127.0.0.1:${process.env.PORT ?? 3000}` },
+    // The Binance login window streams its screen and accepts input over a WebSocket under /api;
+    // without `ws` the dev proxy answers the upgrade itself and the window never connects.
+    proxy:
+      mode === 'demo'
+        ? undefined
+        : { '/api': { target: `http://127.0.0.1:${process.env.PORT ?? 3000}`, ws: true } },
   },
   build: { outDir: mode === 'demo' ? '../../dist/demo' : '../../dist/admin', emptyOutDir: true },
 }));

@@ -109,7 +109,16 @@ class ApiController {
     const path = req.path.slice('/api/v1'.length).replace(/\/$/, '') || '/';
     const body = req.body ?? {};
     const write = !['GET', 'HEAD'].includes(method);
-    if (method === 'GET' && path === '/health') return { status: 'ok', storage: s.db.mode, version: '0.1.0' };
+    if (method === 'GET' && path === '/health') {
+      // Answer from the database, not just the process: a container that lost its database is not
+      // healthy even though the HTTP layer still accepts requests.
+      const reachable = await s.db
+        .query('SELECT 1 AS ok')
+        .then(() => true)
+        .catch(() => false);
+      if (!reachable) res.status(503);
+      return { status: reachable ? 'ok' : 'unavailable', storage: s.db.mode, version: '0.1.0' };
+    }
     if (method === 'GET' && path === '/auth/state') return s.auth.state();
     if (method === 'POST' && ['/auth/setup', '/auth/login'].includes(path)) {
       const session =

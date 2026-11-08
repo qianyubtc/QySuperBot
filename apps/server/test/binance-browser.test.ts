@@ -159,6 +159,16 @@ test('browser websocket rejects unauthorized, cross-origin, unknown paths and wr
     origin: publicOrigin,
     cookie,
   });
+  // A console served from a different address than PUBLIC_ORIGIN (dev proxy, alternate domain)
+  // still connects, because a browser cannot forge Host and Origin/Host therefore stay same-origin.
+  const sameHost = new WebSocket(base.replace('http', 'ws') + path, { headers: { origin: base, cookie } });
+  await new Promise<void>((resolve, reject) => {
+    sameHost.once('open', resolve);
+    sameHost.once('error', reject);
+  });
+  sameHost.close();
+  for (let i = 0; i < 100 && runtime.viewers.size; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(runtime.viewers.size, 0);
   const ws = new WebSocket(base.replace('http', 'ws') + path, { headers: { origin: publicOrigin, cookie } });
   await new Promise<void>((resolve, reject) => {
     ws.once('open', resolve);
@@ -179,6 +189,58 @@ test('browser websocket rejects unauthorized, cross-origin, unknown paths and wr
   assert.equal(await closed, 1008);
   await serverClosed;
   assert.equal(runtime.viewers.size, 0);
+  s.binanceBrowser.stop();
+});
+test('a viewer that acknowledges frames gets one at a time and always the newest; Chrome is paced', async () => {
+  const { a, runtime, calls } = await fixture();
+  const path = `/api/v1/accounts/${a.id}/binance-browser/socket?window_id=${runtime.id}`;
+  const ws = new WebSocket(base.replace('http', 'ws') + path, { headers: { origin: publicOrigin, cookie } });
+  const frames: string[] = [];
+  ws.on('message', (raw) => {
+    const value = JSON.parse(raw.toString());
+    if (value.type === 'frame') frames.push(value.data);
+  });
+  await new Promise<void>((resolve, reject) => {
+    ws.once('open', resolve);
+    ws.once('error', reject);
+  });
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(check());
+  };
+  const chromeAcks = () =>
+    calls.filter((call) => call.method === 'Page.screencastFrameAck').map((call) => call.params.sessionId);
+  const ackTimes: number[] = [];
+  const command = runtime.cdp.command;
+  runtime.cdp.command = async (method: string, params: any) => {
+    if (method === 'Page.screencastFrameAck') ackTimes.push(Date.now());
+    return command(method, params);
+  };
+  const browser = s.binanceBrowser;
+  await until(() => runtime.viewers.size === 1);
+
+  browser.frame(runtime as any, 1, 'frame-1');
+  await until(() => frames.length === 1 && chromeAcks().length === 1);
+  ws.send(JSON.stringify({ type: 'frame_ack' }));
+  await new Promise((r) => setTimeout(r, 50));
+
+  // Like Chrome, send the next frame only after the previous one was acknowledged.
+  for (const n of [2, 3, 4]) {
+    browser.frame(runtime as any, n, `frame-${n}`);
+    await until(() => chromeAcks().length === n);
+  }
+  await new Promise((r) => setTimeout(r, 100));
+  // The viewer has not drawn frame 2 yet, so frames 3 and 4 were held back.
+  assert.deepEqual(frames, ['frame-1', 'frame-2']);
+  // Chrome keeps painting meanwhile, but no faster than one frame per 80 ms.
+  assert.deepEqual(chromeAcks(), [1, 2, 3, 4]);
+  for (let i = 1; i < ackTimes.length; i++) assert.ok(ackTimes[i]! - ackTimes[i - 1]! >= 70);
+
+  // Once it has drawn frame 2 it gets the newest frame straight away, skipping frame 3.
+  ws.send(JSON.stringify({ type: 'frame_ack' }));
+  await until(() => frames.length === 3);
+  assert.deepEqual(frames, ['frame-1', 'frame-2', 'frame-4']);
+  ws.close();
   s.binanceBrowser.stop();
 });
 test('browser adopts only minimal URL-scoped credentials and preserves the window on validation failure', async () => {

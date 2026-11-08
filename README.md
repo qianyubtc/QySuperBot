@@ -213,7 +213,7 @@ curl http://127.0.0.1:3000/api/v1/messages \
 | --- | --- |
 | 网页 | React 19、TypeScript、Vite、React Router、Lucide |
 | 服务端 | NestJS、Node.js，API 与 worker 同进程运行 |
-| 数据存储 | PostgreSQL / PGlite，消息、规则、任务、回执与审计持久化 |
+| 数据存储 | PostgreSQL / PGlite，消息、规则、任务、回执与审计持久化，可按表配置保留期 |
 | 实时更新 | SSE 聊天快照与投递状态，游标历史分页 |
 | 任务处理 | 数据库 outbox、幂等请求、执行前复查、独立尝试与人工核对 |
 | 接入协议 | HTTP 签名、账号会话、能力与权限声明、版本化指令和回执 |

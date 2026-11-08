@@ -194,6 +194,22 @@ CREATE INDEX IF NOT EXISTS audit_created ON audit(created_at DESC);
 DELETE FROM audit WHERE action='account.refreshed' AND actor='定时刷新';
 `,
   },
+  {
+    version: 3,
+    name: 'bounded job cleanup',
+    sql: `
+-- Job cleanup reads terminal rows by age; unsettled jobs are never candidates.
+CREATE INDEX IF NOT EXISTS jobs_terminal_created ON jobs(created_at)
+  WHERE status IN ('succeeded','failed','cancelled','expired');
+-- A job referenced by evidence or by a verification must be kept, so these guards need indexes.
+CREATE INDEX IF NOT EXISTS keyword_hits_job ON keyword_hits(job_id) WHERE job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS member_actions_job ON member_actions(job_id) WHERE job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS qq_join_requests_job ON qq_join_requests(job_id) WHERE job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS verifications_challenge_job ON verifications(challenge_job_id) WHERE challenge_job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS verifications_timeout_job ON verifications(timeout_job_id) WHERE timeout_job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS verifications_failure_job ON verifications(failure_job_id) WHERE failure_job_id IS NOT NULL;
+`,
+  },
 ];
 
 export interface MigrationConnection {

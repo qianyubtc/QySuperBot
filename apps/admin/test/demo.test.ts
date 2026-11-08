@@ -359,7 +359,9 @@ test('reconnecting a demo account restores sending while keeping old failures in
   assert.equal(history.length, 1);
   assert.equal(history[0]?.status, 'failed');
   assert.equal(history[0]?.last_error, '账号未在线');
-  assert(!restored.messages.some((message) => message.content === 'unsent demo message'));
+  assert(
+    !restored.messages.some((message: { content: string }) => message.content === 'unsent demo message'),
+  );
 });
 test('quota failure is explicit and never claims a successful mutation', () => {
   const s = new DemoStore({

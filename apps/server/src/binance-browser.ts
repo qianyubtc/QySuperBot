@@ -4,7 +4,7 @@ import { access, mkdir, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
 import { ApiError } from './security.ts';
@@ -13,6 +13,7 @@ import type { Database, Row } from './database.ts';
 import type { AuthService } from './auth.ts';
 import { audit } from './context.ts';
 import { ChromePipe } from './chrome-pipe.ts';
+import { log } from './log.ts';
 
 const run = promisify(execFile);
 const home = 'https://www.binance.com/zh-CN/square/chat';
@@ -41,7 +42,15 @@ export const browserInput = z.discriminatedUnion('type', [
     modifiers: z.number().int().min(0).max(15),
   }),
   z.strictObject({ type: z.literal('ping') }),
+  // Sent by the page after it has drawn a frame; see BinanceBrowser.deliver.
+  z.strictObject({ type: z.literal('frame_ack') }),
 ]);
+/** How a viewer is keeping up with the screencast. */
+type ViewerFlow = { acks: boolean; inflight: boolean; sentAt: number; sent: number };
+/** At most ~12 frames a second: enough for typing and QR codes, light on a small VPS. */
+const frameIntervalMs = 80;
+/** A viewer that stops acknowledging (hidden tab, lost message) gets frames again after this. */
+const staleFrameMs = 3000;
 type Session = {
   id: string;
   accountId: string;
@@ -57,6 +66,13 @@ type Session = {
   switching: boolean;
   screenshot?: string;
   page?: string;
+  /** Sequence number of `screenshot`. */
+  frame?: number;
+  /** Chrome's screencast frame waiting for our acknowledgement (Chrome sends no more until then). */
+  pendingAck?: number;
+  ackTimer?: ReturnType<typeof setTimeout>;
+  lastAck?: number;
+  flow?: Map<WebSocket, ViewerFlow>;
 };
 
 export class BinanceBrowser {
@@ -64,6 +80,7 @@ export class BinanceBrowser {
   server?: WebSocketServer;
   closing = false;
   cleanup: Promise<void> = Promise.resolve();
+  readonly publicOrigin: string;
   constructor(
     readonly config: Config,
     readonly db: Database,
@@ -74,7 +91,31 @@ export class BinanceBrowser {
       actor: string,
       signal: AbortSignal,
     ) => Promise<unknown>,
-  ) {}
+  ) {
+    try {
+      this.publicOrigin = new URL(config.publicOrigin).origin;
+    } catch {
+      this.publicOrigin = '';
+    }
+  }
+  /**
+   * `PUBLIC_ORIGIN` is the address connectors call, which is not always the address the console is
+   * opened from (dev proxy, reverse proxy, alternate host). A browser cannot forge `Host`, so a
+   * matching Origin/Host pair is still same-origin and still rejects cross-site WebSocket upgrades.
+   */
+  originAllowed(request: IncomingMessage): boolean {
+    const origin = request.headers.origin;
+    if (!origin) return false;
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      return false;
+    }
+    if (this.publicOrigin && parsed.origin === this.publicOrigin) return true;
+    const host = request.headers.host;
+    return !!host && parsed.host.toLowerCase() === host.toLowerCase();
+  }
   async account(id: string) {
     const row = (await this.db.query('SELECT * FROM accounts WHERE id=$1', [z.string().uuid().parse(id)]))[0];
     if (!row || row.kind !== 'binance') throw new ApiError(404, 'ACCOUNT_NOT_FOUND', '币安连接不存在');
@@ -205,21 +246,19 @@ export class BinanceBrowser {
         )
           this.page(s, event.params.frame?.url);
         if (event.method === 'Page.screencastFrame' && event.sessionId === s.target) {
-          void s.cdp
-            ?.command('Page.screencastFrameAck', { sessionId: event.params.sessionId }, s.target)
-            .catch(() => {});
-          if (typeof event.params.data !== 'string' || event.params.data.length > 3 * 1024 * 1024) return;
-          s.screenshot = event.params.data;
-          for (const viewer of s.viewers)
-            if (viewer.readyState === WebSocket.OPEN && viewer.bufferedAmount < 1024 * 1024)
-              viewer.send(JSON.stringify({ type: 'frame', data: event.params.data }));
+          if (typeof event.params.data === 'string' && event.params.data.length <= 3 * 1024 * 1024)
+            this.frame(s, event.params.sessionId, event.params.data);
+          else
+            void s.cdp
+              ?.command('Page.screencastFrameAck', { sessionId: event.params.sessionId }, s.target)
+              .catch(() => {});
         }
       });
       const history = await s.cdp.command('Page.getNavigationHistory', {}, s.target);
       this.page(s, history.entries?.[history.currentIndex]?.url);
       await s.cdp.command(
         'Page.startScreencast',
-        { format: 'jpeg', quality: 70, maxWidth: 1200, maxHeight: 800 },
+        { format: 'jpeg', quality: 60, maxWidth: 1200, maxHeight: 800 },
         s.target,
       );
       if (this.session !== s) throw new ApiError(409, 'BINANCE_BROWSER_CLOSED', '登录窗口已关闭');
@@ -241,6 +280,63 @@ export class BinanceBrowser {
       'Emulation.setDeviceMetricsOverride',
       { width: 1200, height: 800, deviceScaleFactor: 1, mobile: false },
       s.target,
+    );
+  }
+  /**
+   * A new screencast frame. Frames used to be pushed while up to 1 MiB was still queued for a
+   * viewer, and Chrome was acknowledged at once, so on a slow link every click waited behind
+   * seconds of stale frames. Now a viewer that acknowledges frames has at most one in flight and
+   * gets the newest one as soon as it has drawn the last, and Chrome is capped at ~12 frames a
+   * second instead of painting and encoding as fast as it can.
+   */
+  frame(s: Session, castSession: number, data: string) {
+    s.screenshot = data;
+    s.frame = (s.frame ?? 0) + 1;
+    for (const viewer of s.viewers) this.deliver(s, viewer);
+    s.pendingAck = castSession;
+    this.pace(s);
+  }
+  private flowOf(s: Session, ws: WebSocket) {
+    s.flow ??= new Map();
+    let flow = s.flow.get(ws);
+    if (!flow) s.flow.set(ws, (flow = { acks: false, inflight: false, sentAt: 0, sent: 0 }));
+    return flow;
+  }
+  private canTake(s: Session, ws: WebSocket) {
+    if (ws.readyState !== WebSocket.OPEN) return false;
+    const flow = this.flowOf(s, ws);
+    // Pages from before frame acknowledgements fall back to the socket buffer.
+    return flow.acks
+      ? !flow.inflight || Date.now() - flow.sentAt > staleFrameMs
+      : ws.bufferedAmount < 256 * 1024;
+  }
+  deliver(s: Session, ws: WebSocket) {
+    const flow = this.flowOf(s, ws);
+    if (!s.screenshot || flow.sent === s.frame || !this.canTake(s, ws)) return;
+    flow.inflight = true;
+    flow.sent = s.frame ?? 0;
+    flow.sentAt = Date.now();
+    ws.send(JSON.stringify({ type: 'frame', data: s.screenshot }));
+  }
+  frameAck(s: Session, ws: WebSocket) {
+    const flow = this.flowOf(s, ws);
+    flow.acks = true;
+    flow.inflight = false;
+    this.deliver(s, ws);
+  }
+  /** Lets Chrome paint the next frame, at most ~12 times a second. */
+  private pace(s: Session) {
+    if (s.pendingAck === undefined || s.ackTimer) return;
+    s.ackTimer = setTimeout(
+      () => {
+        s.ackTimer = undefined;
+        const id = s.pendingAck;
+        if (id === undefined || this.session !== s) return;
+        s.pendingAck = undefined;
+        s.lastAck = Date.now();
+        void s.cdp?.command('Page.screencastFrameAck', { sessionId: id }, s.target).catch(() => {});
+      },
+      Math.max(0, (s.lastAck ?? 0) + frameIntervalMs - Date.now()),
     );
   }
   page(s: Session, value: unknown) {
@@ -312,6 +408,8 @@ export class BinanceBrowser {
     s.abort.abort();
     clearTimeout(s.expiry);
     s.screenshot = undefined;
+    clearTimeout(s.ackTimer);
+    s.ackTimer = undefined;
     for (const viewer of s.viewers) viewer.close(1000, 'Login window closed');
     s.cdp?.close();
     s.browser?.kill('SIGTERM');
@@ -340,8 +438,14 @@ export class BinanceBrowser {
       const match = request.url?.match(browserSocketPath);
       if (!match) return;
       void (async () => {
-        if (this.closing || request.headers.origin !== new URL(this.config.publicOrigin).origin)
+        if (this.closing || !this.originAllowed(request)) {
+          log.warn('binance browser websocket rejected', {
+            reason: this.closing ? 'closing' : 'origin',
+            origin: String(request.headers.origin ?? ''),
+            host: String(request.headers.host ?? ''),
+          });
           throw new Error();
+        }
         const principal = await this.auth.authenticate(request.headers);
         this.auth.requireAdmin(principal);
         await this.account(match[1]!);
@@ -350,7 +454,7 @@ export class BinanceBrowser {
         wss.handleUpgrade(request, socket, head, (ws) => {
           s.viewers.add(ws);
           ws.on('error', () => {});
-          if (s.screenshot) ws.send(JSON.stringify({ type: 'frame', data: s.screenshot }));
+          this.deliver(s, ws);
           if (s.page) ws.send(JSON.stringify({ type: 'page', url: s.page }));
           let count = 0,
             since = Date.now();
@@ -367,6 +471,7 @@ export class BinanceBrowser {
           ws.once('close', () => {
             clearInterval(check);
             s.viewers.delete(ws);
+            s.flow?.delete(ws);
           });
           ws.on('message', (raw) => {
             void (async () => {
@@ -379,6 +484,10 @@ export class BinanceBrowser {
               const input = browserInput.parse(JSON.parse(raw.toString()));
               if (input.type === 'ping') {
                 ws.send(JSON.stringify({ type: 'pong' }));
+                return;
+              }
+              if (input.type === 'frame_ack') {
+                this.frameAck(s, ws);
                 return;
               }
               if (input.type === 'text')
