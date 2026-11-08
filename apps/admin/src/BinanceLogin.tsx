@@ -168,6 +168,12 @@ export default function BinanceLogin({
       modifiers: (e.altKey ? 1 : 0) | (e.ctrlKey || e.metaKey ? 2 : 0) | (e.shiftKey ? 8 : 0),
     });
   }
+  function go(destination: 'login' | 'square' | 'chat') {
+    void api(`/accounts/${id}/binance-browser/navigate`, {
+      method: 'POST',
+      body: { destination, window_id: windowId },
+    }).catch((e) => setError(e.message));
+  }
   async function connect() {
     setBusy(true);
     setError('');
@@ -204,28 +210,18 @@ export default function BinanceLogin({
           </span>
           {ready ? (
             <>
-              <button
-                className="text-button"
-                disabled={busy}
-                onClick={() => {
-                  void api(`/accounts/${id}/binance-browser/navigate`, {
-                    method: 'POST',
-                    body: { destination: 'login', window_id: windowId },
-                  }).catch((e) => setError(e.message));
-                }}
-              >
+              <button className="text-button" disabled={busy} onClick={() => go('login')}>
                 登录页
               </button>
               <button
                 className="text-button"
                 disabled={busy}
-                onClick={() => {
-                  void api(`/accounts/${id}/binance-browser/navigate`, {
-                    method: 'POST',
-                    body: { window_id: windowId },
-                  }).catch((e) => setError(e.message));
-                }}
+                onClick={() => go('square')}
+                title="显示 403 时，先在广场页面手动完成人机验证"
               >
+                广场
+              </button>
+              <button className="text-button" disabled={busy} onClick={() => go('chat')}>
                 <RefreshCw size={12} /> 聊天页
               </button>
             </>
@@ -294,6 +290,9 @@ export default function BinanceLogin({
           />
         </div>
       </div>
+      <p className="binance-window-hint">
+        画面显示 403 时：点“广场”，在画面中手动完成人机验证，再点“聊天页”。
+      </p>
       {error && (
         <div role="alert" className="form-error">
           {error}

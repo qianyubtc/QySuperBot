@@ -81,3 +81,8 @@
   pointer-events: none;
   color: var(--text-3);
 }
+.binance-window-hint {
+  margin-top: -6px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}

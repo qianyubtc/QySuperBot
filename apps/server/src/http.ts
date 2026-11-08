@@ -302,7 +302,7 @@ class ApiController {
           id,
           z
             .strictObject({
-              destination: z.enum(['login', 'chat']).default('chat'),
+              destination: z.enum(['login', 'chat', 'square']).default('chat'),
               window_id: z.string().uuid(),
             })
             .parse(body).destination,

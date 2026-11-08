@@ -330,10 +330,22 @@ test('display location strips sensitive query and fragment, and navigation uses 
   assert.equal((runtime as any).page, 'https://accounts.binance.com/zh-CN/login');
   await s.binanceBrowser.navigate(a.id, 'login');
   await s.binanceBrowser.navigate(a.id, 'chat');
+  await s.binanceBrowser.navigate(a.id, 'square');
   assert.deepEqual(
     calls.map((c) => c.params.url),
-    ['https://accounts.binance.com/zh-CN/login', 'https://www.binance.com/zh-CN/square/chat'],
+    [
+      'https://accounts.binance.com/zh-CN/login',
+      'https://www.binance.com/zh-CN/square/chat',
+      'https://www.binance.com/zh-CN/square',
+    ],
   );
+  const square = await fetch(base + `/api/v1/accounts/${a.id}/binance-browser/navigate`, {
+    method: 'POST',
+    headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
+    body: JSON.stringify({ destination: 'square', window_id: runtime.id }),
+  });
+  assert.equal(square.status, 200);
+  assert.equal(calls.at(-1)!.params.url, 'https://www.binance.com/zh-CN/square');
   const r = await fetch(base + `/api/v1/accounts/${a.id}/binance-browser/navigate`, {
     method: 'POST',
     headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },

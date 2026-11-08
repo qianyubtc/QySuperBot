@@ -18,6 +18,9 @@ import { log } from './log.ts';
 const run = promisify(execFile);
 const home = 'https://www.binance.com/zh-CN/square/chat';
 const login = 'https://accounts.binance.com/zh-CN/login';
+// Binance's CDN answers 403 until its human verification is passed, which Square shows.
+const square = 'https://www.binance.com/zh-CN/square';
+const destinations = { login, chat: home, square } as const;
 const coordinate = z.number().finite().min(0).max(1200);
 export const browserSocketPath =
   /^\/api\/v1\/accounts\/([a-f0-9-]{36})\/binance-browser\/socket\?window_id=([a-f0-9-]{36})$/;
@@ -396,9 +399,9 @@ export class BinanceBrowser {
       s.switching = false;
     }
   }
-  async navigate(id: string, destination: 'login' | 'chat' = 'chat', windowId?: string) {
+  async navigate(id: string, destination: keyof typeof destinations = 'chat', windowId?: string) {
     const s = this.current(id, windowId);
-    await s.cdp!.command('Page.navigate', { url: destination === 'login' ? login : home }, s.target);
+    await s.cdp!.command('Page.navigate', { url: destinations[destination] }, s.target);
     return { navigated: true };
   }
   stop(id?: string, windowId?: string) {
