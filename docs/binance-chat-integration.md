@@ -29,6 +29,21 @@ Linux 服务端需安装 Google Chrome、Xvfb、xauth，启用 `BINANCE_BROWSER_
 
 可手动填入同一会话的 `p20t`、`cr00` 与可选 `BNC_FV_KEY`；无需交易 API Key，不接受完整 Cookie。网页与聊天令牌可能是 JWT，也可能为不透明格式；解析 JWT 声明不等于验证签名或可信身份。真正身份通过聊天接口和聊天令牌身份共同核对。
 
+### 站点被拦（403）与备用站
+
+部分网络或地区访问 `www.binance.com` 会得到 403，而登录域名 `accounts.binance.com` 仍可用：表现是“窗口里能登录，一进广场就是 403 / Access Denied”。这不是凭证问题，重新登录也不会好。
+
+服务按“站点”组织币安会话。站点决定登录页、聊天页、`/bapi` 调用和 IM 套接字使用的域，凭证只在同一站点内复用：
+
+| `BINANCE_WEB_SITE` | 登录页 | 聊天页 |
+| --- | --- | --- |
+| `official`（默认） | `accounts.binance.com/zh-CN/login` | `www.binance.com/zh-CN/square/chat` |
+| `backup` | `www.qorscuxtbd.com/zh-CN/login` | `www.qorscuxtbd.com/zh-CN/square` |
+
+备用站只是一个预设，使用前请自行用 Binance Verify 核实；切换后需要在该站点重新登录，主站 Cookie 不会带过去。设置 `BINANCE_WEB_SITE=backup` 后重启服务，再打开“登录币安”。
+
+登录窗口在点“连接此账号”时会先读取当前页面：403 / Access Denied 返回 `BINANCE_ACCESS_BLOCKED` 并提示切换站点，安全提示页返回 `BINANCE_VERIFICATION_REQUIRED`，两者都不会被误判成登录失效。若备用站同样返回 403，说明是服务器出口网络被整体拦截，需要更换出口。
+
 ## Chrome 桥接
 
 ```sh

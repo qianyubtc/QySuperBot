@@ -16,6 +16,8 @@ export interface Config {
   qqWebuiToken?: string;
   binanceBrowserEnabled?: boolean;
   binanceBrowserExecutable?: string;
+  /** Which verified Binance web site carries the chat session; see binance-site.ts. */
+  binanceWebSite: 'official' | 'backup';
   /** Express `trust proxy`: which direct peers may report the client address in X-Forwarded-For. */
   trustProxy?: boolean | number | string;
   /**
@@ -68,6 +70,12 @@ export function loadConfig(): Config {
     qqWebuiToken: process.env.QQ_WEBUI_TOKEN,
     binanceBrowserEnabled: process.env.BINANCE_BROWSER_ENABLED === 'true',
     binanceBrowserExecutable: process.env.BINANCE_BROWSER_EXECUTABLE ?? '/usr/bin/google-chrome',
+    binanceWebSite: (() => {
+      const value = (process.env.BINANCE_WEB_SITE ?? 'official').trim();
+      if (value !== 'official' && value !== 'backup')
+        throw new Error("BINANCE_WEB_SITE must be 'official' or 'backup'");
+      return value;
+    })(),
     trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     // Inbox events only back idempotency and diagnostics, so they expire by default. Messages and
     // audit rows are the chat archive and stay forever unless the administrator sets a window.

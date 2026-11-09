@@ -21,6 +21,7 @@ import { QQVerification } from './qq-verification.ts';
 import { KeywordRules } from './keyword-rules.ts';
 import { TemplatesService } from './templates.ts';
 import { MembersDirectory } from './members.ts';
+import { binanceSite } from './binance-site.ts';
 
 export async function createServices(
   config: Config,
@@ -31,7 +32,7 @@ export async function createServices(
     const box = options.box ?? (await SecretBox.create(config));
     const uploads = new UploadsService(db);
     const ctx = { db, box, config, uploads, adapters: new Adapters(config, box, uploads) };
-    const binance = new BinanceBridge(db, box, uploads);
+    const binance = new BinanceBridge(db, box, uploads, binanceSite(config.binanceWebSite));
     ctx.adapters.binance = binance;
     const auth = new AuthService(db, config);
     const accounts = new AccountsService(ctx);

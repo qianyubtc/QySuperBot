@@ -252,6 +252,8 @@ test('browser adopts only minimal URL-scoped credentials and preserves the windo
     { name: 'unrelated', value: 'must-not-export', path: '/' },
   ];
   runtime.cdp.command = async (method, params) => {
+    // The window first proves it is showing Binance and not a CDN refusal page.
+    if (method === 'Runtime.evaluate') return { result: { value: { title: '币安广场', text: '' } } };
     assert.equal(method, 'Network.getCookies');
     assert.deepEqual(params.urls, [
       'https://www.binance.com/bapi/c2c/v3/private/binance-chat/user/get-my-profile',
@@ -328,7 +330,9 @@ test('a connected window becomes the kept chat browser: it outlives the window, 
   browser.session = runtime as any;
   assert.deepEqual(await browser.connect(a.id, 'test'), { chatUserId: '42' });
   assert.deepEqual(options, { hosted: true });
-  const evaluated = calls.filter((c) => c.method === 'Runtime.evaluate');
+  const evaluated = calls.filter(
+    (c) => c.method === 'Runtime.evaluate' && /__qsbBinance/.test(String(c.params.expression)),
+  );
   assert(evaluated.every((c) => c.params.contextId === 7 && c.params.returnByValue));
   assert(calls.some((c) => c.method === 'Page.createIsolatedWorld' && c.params.worldName === 'qsb-binance'));
 
@@ -382,7 +386,9 @@ test('closing while cookies are being read prevents adoption', async () => {
   const started = new Promise<void>((resolve) => {
     reading = resolve;
   });
-  runtime.cdp.command = async () => {
+  runtime.cdp.command = async (method: string) => {
+    // The refusal probe answers at once; only the cookie read is held open by this test.
+    if (method === 'Runtime.evaluate') return { result: { value: { title: '币安广场', text: '' } } };
     reading();
     return new Promise((resolve) => {
       finish = resolve;
@@ -516,4 +522,30 @@ test('application shutdown closes an active login websocket and aborts its sessi
     clearTimeout(timeout);
     ws.terminate();
   }
+});
+
+test('the configured site decides which pages the window opens and which count as the session', async () => {
+  const backup = new BinanceBrowser(
+    { ...loadConfig(), binanceWebSite: 'backup' },
+    s.db,
+    s.auth,
+    async () => ({}),
+  );
+  assert.deepEqual(backup.destinations, {
+    login: 'https://www.qorscuxtbd.com/zh-CN/login',
+    chat: 'https://www.qorscuxtbd.com/zh-CN/square',
+    square: 'https://www.qorscuxtbd.com/zh-CN/square',
+  });
+  assert.equal(backup.onChatOrigin('https://www.qorscuxtbd.com/zh-CN/square'), true);
+  assert.equal(backup.onChatOrigin('https://www.binance.com/zh-CN/square/chat'), false);
+  const official = new BinanceBrowser(
+    { ...loadConfig(), binanceWebSite: 'official' },
+    s.db,
+    s.auth,
+    async () => ({}),
+  );
+  assert.equal(official.destinations.chat, 'https://www.binance.com/zh-CN/square/chat');
+  assert.equal(official.onChatOrigin('https://www.binance.com/zh-CN/square/chat'), true);
+  // The sign-in host belongs to the site but never serves the chat session.
+  assert.equal(official.onChatOrigin('https://accounts.binance.com/zh-CN/login'), false);
 });

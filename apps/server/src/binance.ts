@@ -15,6 +15,7 @@ import type { Presentation } from './presentation.ts';
 import type { UploadsService } from './uploads.ts';
 import { BinanceDirect, binanceAuthentication } from './binance-direct.ts';
 import { audit, json } from './context.ts';
+import { binanceSites, type BinanceSite } from './binance-site.ts';
 import { BinanceEnrollment } from './binance-enrollment.ts';
 
 export const binanceGroupId = z.string().regex(/^[1-9]\d{0,18}$/);
@@ -523,10 +524,11 @@ export class BinanceBridge {
     db: Database,
     box: SecretBox,
     readonly uploads: UploadsService,
+    site: BinanceSite = binanceSites.official,
   ) {
     this.db = db;
     this.box = box;
-    this.direct = new BinanceDirect(db, box);
+    this.direct = new BinanceDirect(db, box, undefined, site);
   }
   attach(server: Server) {
     if (this.server) throw new Error('Binance bridge already attached');

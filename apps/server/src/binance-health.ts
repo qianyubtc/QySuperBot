@@ -29,6 +29,9 @@ export function binanceFailureKind(error: unknown): IssueKind {
   const value = error as { code?: string; bridgeError?: Record<string, unknown> };
   if (value?.code === 'BINANCE_TOKEN_EXPIRED') return 'login_required';
   if (value?.code === 'BINANCE_IDENTITY_CHANGED') return 'identity_changed';
+  // A blocked page is a network/site problem, not a dead login: never send the operator to re-login.
+  if (value?.code === 'BINANCE_ACCESS_BLOCKED') return 'access_blocked';
+  if (value?.code === 'BINANCE_VERIFICATION_REQUIRED') return 'check_required';
   const detail = value?.bridgeError;
   const website = ['profile', 'group', 'member', 'history', 'token', 'restriction', 'groups'].includes(
     String(detail?.stage),

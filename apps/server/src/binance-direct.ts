@@ -8,6 +8,7 @@ import type { Database, Row } from './database.ts';
 import { ApiError, type SecretBox } from './security.ts';
 import { requestRemote } from './network.ts';
 import { audit, json } from './context.ts';
+import { binanceSites, siteHostMatches, type BinanceSite } from './binance-site.ts';
 import {
   beginBinanceCheck,
   binanceFailureKind,
@@ -45,7 +46,14 @@ export const binanceAuthentication = z.discriminatedUnion('mode', [
     }),
 ]);
 type Credentials = Extract<z.infer<typeof binanceAuthentication>, { mode: 'direct' }>;
-type ClientFactory = (credentials: Credentials, beforeSend: (groupId: string) => Promise<void>) => ChatClient;
+type ClientFactory = (
+  credentials: Credentials,
+  beforeSend: (groupId: string) => Promise<void>,
+  site: BinanceSite,
+) => ChatClient;
+/** The production factory keeps the optional network hooks for tests and local routing. */
+const defaultFactory: ClientFactory = (credentials, beforeSend, site) =>
+  createDirectClient(credentials, beforeSend, {}, site);
 type SocketOptions = import('ws').ClientOptions & Pick<import('node:http').ClientRequestArgs, 'lookup'>;
 
 function safeDiagnostic(error: unknown) {
@@ -107,12 +115,16 @@ export function createDirectClient(
     resolve?: typeof lookup;
     connect?: (url: URL, options: SocketOptions) => unknown;
   } = {},
+  site: BinanceSite = binanceSites.official,
 ): ChatClient {
   const lifetime = new AbortController();
+  const origin = `https://${site.host}`;
+  const hostAllowed = (hostname: string) => siteHostMatches(site, hostname);
   const client = createBinanceChatClient({
     beforeSend,
     managementEnabled: true,
     WebSocket,
+    isHost: hostAllowed,
     csrfToken: credentials.csrf_token ? () => credentials.csrf_token! : undefined,
     cookie: (name) => {
       if (name === 'BNC_FV_KEY') return credentials.device_id ?? '';
@@ -129,8 +141,8 @@ export function createDirectClient(
       // Relative, fixed chat routes are checked by the shared protocol before arriving here.
       const path = String(input);
       const authenticated = path.startsWith('/bapi/');
-      const url = authenticated ? new URL(path, 'https://www.binance.com') : new URL(path);
-      if (authenticated && url.origin !== 'https://www.binance.com')
+      const url = authenticated ? new URL(path, origin) : new URL(path);
+      if (authenticated && url.origin !== origin)
         throw new ApiError(400, 'BINANCE_ENDPOINT', '币安聊天接口地址无效');
       if (!authenticated && (init.method !== 'PUT' || url.protocol !== 'https:'))
         throw new ApiError(400, 'BINANCE_ENDPOINT', '币安上传接口地址无效');
@@ -140,8 +152,8 @@ export function createDirectClient(
         headers.cookie =
           `p20t=${credentials.web_token}` +
           (credentials.csrf_cookie ? `; cr00=${credentials.csrf_cookie}` : '');
-        headers.origin = 'https://www.binance.com';
-        headers.referer = 'https://www.binance.com/zh-CN/square/chat';
+        headers.origin = origin;
+        headers.referer = site.chat;
       }
       const body =
         init.body instanceof Blob
@@ -160,7 +172,7 @@ export function createDirectClient(
       const url = new URL(raw);
       if (
         url.protocol !== 'wss:' ||
-        !url.hostname.endsWith('.binance.com') ||
+        !hostAllowed(url.hostname) ||
         url.port ||
         url.username ||
         url.password ||
@@ -173,7 +185,7 @@ export function createDirectClient(
         throw new ApiError(400, 'BINANCE_SOCKET_ENDPOINT', '币安聊天服务器地址不在公网范围');
       const address = addresses.find((item) => item.family === 4) ?? addresses[0]!;
       const options: SocketOptions = {
-        origin: 'https://www.binance.com',
+        origin,
         followRedirects: false,
         handshakeTimeout: 10000,
         maxPayload: 2 * 1024 * 1024,
@@ -206,7 +218,8 @@ export class BinanceDirect {
   constructor(
     readonly db: Database,
     readonly box: SecretBox,
-    readonly factory: ClientFactory = createDirectClient,
+    readonly factory: ClientFactory = defaultFactory,
+    readonly site: BinanceSite = binanceSites.official,
   ) {}
 
   async prepare(
@@ -235,7 +248,9 @@ export class BinanceDirect {
     try {
       checkAbort();
       const beforeSend = (group: string) => this.beforeSend(account.id, fence.session, group);
-      client = options.hosted ? this.hosted!(account.id, beforeSend) : this.factory(credentials, beforeSend);
+      client = options.hosted
+        ? this.hosted!(account.id, beforeSend)
+        : this.factory(credentials, beforeSend, this.site);
       signal?.addEventListener('abort', aborted, { once: true });
       const profile = z
         .object({ chatUserId: z.string().regex(/^\d+$/) })
@@ -404,7 +419,7 @@ export class BinanceDirect {
       const session = account.session_id;
       entry = {
         session,
-        client: this.factory(credentials, (group) => this.beforeSend(account.id, session, group)),
+        client: this.factory(credentials, (group) => this.beforeSend(account.id, session, group), this.site),
       };
       this.clients.set(account.id, entry);
     }

@@ -3,6 +3,10 @@
 export function createBinanceChatClient(environment) {
   const fetch = environment.fetch;
   const cookie = environment.cookie ?? (() => '');
+  // Each host states which domains may serve this session's socket and media; Binance's own
+  // domains are the default, and a verified alternate site adds its own.
+  const isHost =
+    environment.isHost ?? ((host) => host === 'binance.com' || host.endsWith('.binance.com'));
   const WebSocket = environment.WebSocket ?? globalThis.WebSocket;
   let closed = false;
   const base = '/bapi/c2c';
@@ -415,7 +419,7 @@ export function createBinanceChatClient(environment) {
       } catch {
         throw failure('FORMAT', 'domain', undefined, undefined, 'DOMAIN_INVALID');
       }
-      if (url.protocol !== 'wss:' || !url.hostname.endsWith('.binance.com') || url.username || url.password)
+      if (url.protocol !== 'wss:' || !isHost(url.hostname) || url.username || url.password)
         throw failure('FORMAT', 'domain', undefined, undefined, 'DOMAIN_INVALID');
       try {
         socketUser = numeric(auth.uid);
@@ -565,9 +569,10 @@ export function createBinanceChatClient(environment) {
         url.password ||
         url.hash ||
         (url.port && url.port !== '443') ||
-        !['binance.com', 'bnbstatic.com', 'amazonaws.com', 'amazonaws.com.cn'].some(
+        !['bnbstatic.com', 'amazonaws.com', 'amazonaws.com.cn'].some(
           (host) => url.hostname === host || url.hostname.endsWith('.' + host),
-        )
+        ) &&
+        !isHost(url.hostname)
       )
         throw failure('FORMAT', 'image');
       if (Date.now() >= params.not_after)

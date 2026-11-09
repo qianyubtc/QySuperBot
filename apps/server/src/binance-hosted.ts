@@ -44,7 +44,7 @@ function sharedClient() {
 }
 
 // Plain page script (kept as text so no build step rewrites it). Installed once per isolated world.
-const pageRuntime = `(createClient) => {
+const pageRuntime = `(createClient, siteDomains) => {
   if (globalThis.__qsbBinance) return 'ready';
   const outbox = [];
   const waiting = new Map();
@@ -71,8 +71,12 @@ const pageRuntime = `(createClient) => {
       ask: error && error.qsbAsk ? error.qsbAsk : null,
       message: error && typeof error.message === 'string' ? error.message.slice(0, 200) : '',
     });
+  // The chat socket and media hosts belong to whichever verified site this window serves.
+  const isHost = (host) =>
+    Array.isArray(siteDomains) && siteDomains.some((d) => host === d || host.endsWith('.' + d));
   const client = createClient({
     fetch: (...args) => fetch(...args),
+    isHost,
     cookie(name) {
       const value = document.cookie
         .split(';')
@@ -139,8 +143,8 @@ const pageRuntime = `(createClient) => {
  * The expression that installs the client in an isolated world of the Binance page. Tests pass a
  * stand-in factory expression; production always uses the shared client.
  */
-export function hostedPageScript(factory?: string) {
-  return `(${pageRuntime})(${factory ?? `(() => {\n${sharedClient()}\nreturn createBinanceChatClient;\n})()`})`;
+export function hostedPageScript(factory?: string, domains: string[] = ['binance.com']) {
+  return `(${pageRuntime})(${factory ?? `(() => {\n${sharedClient()}\nreturn createBinanceChatClient;\n})()`}, ${JSON.stringify(domains)})`;
 }
 
 type Evaluate = (expression: string) => Promise<any>;

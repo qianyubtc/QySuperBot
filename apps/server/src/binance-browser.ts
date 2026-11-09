@@ -15,14 +15,13 @@ import { audit } from './context.ts';
 import { ChromePipe } from './chrome-pipe.ts';
 import { log } from './log.ts';
 import { HostedChannel, hostedPageScript } from './binance-hosted.ts';
+import { binanceSite, pageRefusalKind } from './binance-site.ts';
 import type { ChatClient } from '../../../packages/binance-chat/client.js';
 
 const run = promisify(execFile);
-const home = 'https://www.binance.com/zh-CN/square/chat';
-const login = 'https://accounts.binance.com/zh-CN/login';
+
 // Binance's CDN answers 403 until its human verification is passed, which Square shows.
-const square = 'https://www.binance.com/zh-CN/square';
-const destinations = { login, chat: home, square } as const;
+
 const coordinate = z.number().finite().min(0).max(1200);
 export const browserSocketPath =
   /^\/api\/v1\/accounts\/([a-f0-9-]{36})\/binance-browser\/socket\?window_id=([a-f0-9-]{36})$/;
@@ -89,13 +88,6 @@ type Session = {
   casting?: boolean;
   watcher?: ReturnType<typeof setInterval>;
 };
-const onBinance = (url: unknown) => {
-  try {
-    return new URL(String(url)).origin === 'https://www.binance.com';
-  } catch {
-    return false;
-  }
-};
 const screencast = { format: 'jpeg', quality: 60, maxWidth: 1200, maxHeight: 800 };
 
 export class BinanceBrowser {
@@ -106,6 +98,25 @@ export class BinanceBrowser {
   readonly publicOrigin: string;
   hosting?: Promise<unknown>;
   hostFailedAt = 0;
+  /** The verified site this deployment uses; both the login page and the chat belong to it. */
+  get site() {
+    return binanceSite(this.config.binanceWebSite);
+  }
+  get destinations() {
+    const site = this.site;
+    return { login: site.login, chat: site.chat, square: site.square } as const;
+  }
+  /**
+   * True only for the site's chat origin. The login host serves the sign-in pages of the same site
+   * but not the chat API, so a window sitting there must never be treated as the chat session.
+   */
+  onChatOrigin(url: unknown) {
+    try {
+      return new URL(String(url)).origin === `https://${this.site.host}`;
+    } catch {
+      return false;
+    }
+  }
   constructor(
     readonly config: Config,
     readonly db: Database,
@@ -240,7 +251,7 @@ export class BinanceBrowser {
           '--disable-dev-shm-usage',
           '--window-size=1280,900',
           '--force-device-scale-factor=1',
-          options.url ?? login,
+          options.url ?? this.site.login,
         ],
         {
           detached: true,
@@ -437,16 +448,17 @@ export class BinanceBrowser {
     const cdp = s.cdp!;
     const frame = async () => (await cdp.command('Page.getFrameTree', {}, s.target)).frameTree?.frame;
     let main = await frame();
-    if (!onBinance(main?.url)) {
+    if (!this.onChatOrigin(main?.url)) {
       // Never navigate away from what a person is doing in the window, such as a verification.
       if (s.viewers.size)
         throw new ApiError(409, 'BINANCE_BROWSER_IN_USE', '请先在登录窗口中打开币安聊天页，再继续');
-      await cdp.command('Page.navigate', { url: home }, s.target);
-      for (let attempt = 0; attempt < 40 && !onBinance(main?.url); attempt++) {
+      await cdp.command('Page.navigate', { url: this.site.chat }, s.target);
+      for (let attempt = 0; attempt < 40 && !this.onChatOrigin(main?.url); attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         main = await frame();
       }
-      if (!onBinance(main?.url)) throw new ApiError(504, 'BINANCE_BROWSER_TIMEOUT', '币安聊天页打开超时');
+      if (!this.onChatOrigin(main?.url))
+        throw new ApiError(504, 'BINANCE_BROWSER_TIMEOUT', '币安聊天页打开超时');
     }
     // An isolated world, like an extension content script: same cookies and origin as the page,
     // but invisible to the page's own scripts.
@@ -464,7 +476,7 @@ export class BinanceBrowser {
       if (result.exceptionDetails) throw new Error('page script failed');
       return result.result?.value;
     };
-    await evaluate(hostedPageScript());
+    await evaluate(hostedPageScript(undefined, this.site.domains));
     const channel = new HostedChannel(evaluate, () => {
       if (s.channel === channel) s.channel = undefined;
     });
@@ -479,7 +491,7 @@ export class BinanceBrowser {
   host(id: string) {
     if (!this.config.binanceBrowserEnabled || this.closing || this.hosting) return;
     if (Date.now() - this.hostFailedAt < 60_000) return;
-    this.hosting = this.start(id, '系统', { keep: true, url: home })
+    this.hosting = this.start(id, '系统', { keep: true, url: this.site.chat })
       .catch((error) => {
         this.hostFailedAt = Date.now();
         log.warn('binance chat browser restart failed', { account: id, error });
@@ -496,6 +508,43 @@ export class BinanceBrowser {
       for (const viewer of s.viewers)
         if (viewer.readyState === WebSocket.OPEN) viewer.send(JSON.stringify({ type: 'page', url: s.page }));
     } catch {}
+  }
+  /**
+   * Reads what the window is actually showing. A 403 from a CDN and a human-verification wall both
+   * look like "no cookies" to the next step, and the operator needs to know which one it is.
+   */
+  private async pageRefusal(s: Session) {
+    try {
+      const result = await s.cdp!.command(
+        'Runtime.evaluate',
+        {
+          expression:
+            "({title: document.title, text: (document.body && document.body.innerText || '').slice(0, 600)})",
+          returnByValue: true,
+        },
+        s.target,
+      );
+      const value = result.result?.value;
+      if (!value || typeof value.title !== 'string') return null;
+      return pageRefusalKind(value.title, typeof value.text === 'string' ? value.text : '');
+    } catch {
+      return null;
+    }
+  }
+  private refusalMessage(kind: 'challenge' | 'denied') {
+    if (kind === 'challenge')
+      return new ApiError(
+        409,
+        'BINANCE_VERIFICATION_REQUIRED',
+        '币安要求先完成安全验证，请在窗口中完成验证后再点击连接此账号',
+      );
+    const site = this.site;
+    const other = site.id === 'official' ? 'backup' : 'official';
+    return new ApiError(
+      409,
+      'BINANCE_ACCESS_BLOCKED',
+      `币安拒绝了这个网络访问${site.id === 'official' ? '官网' : '备用站'}（403 或访问受限）。可先更换服务器出口网络；若确认是站点被拦，改用已核实的${other === 'backup' ? '备用站' : '官网'}（BINANCE_WEB_SITE=${other}）后重启`,
+    );
   }
   current(id: string, windowId?: string) {
     const s = this.session;
@@ -517,10 +566,12 @@ export class BinanceBrowser {
     if (s.switching) throw new ApiError(409, 'BINANCE_BUSY', '正在验证并连接，请稍候');
     s.switching = true;
     try {
+      const refusal = await this.pageRefusal(s);
+      if (refusal) throw this.refusalMessage(refusal);
       // URL-scoped CDP cookies are filtered immediately; no full cookie response reaches the client or logs.
       const data = await s.cdp!.command(
         'Network.getCookies',
-        { urls: ['https://www.binance.com/bapi/c2c/v3/private/binance-chat/user/get-my-profile'] },
+        { urls: [`https://${this.site.host}/bapi/c2c/v3/private/binance-chat/user/get-my-profile`] },
         s.target,
       );
       const pick = (name: string) =>
@@ -547,9 +598,9 @@ export class BinanceBrowser {
       s.switching = false;
     }
   }
-  async navigate(id: string, destination: keyof typeof destinations = 'chat', windowId?: string) {
+  async navigate(id: string, destination: 'login' | 'chat' | 'square' = 'chat', windowId?: string) {
     const s = this.current(id, windowId);
-    await s.cdp!.command('Page.navigate', { url: destinations[destination] }, s.target);
+    await s.cdp!.command('Page.navigate', { url: this.destinations[destination] }, s.target);
     return { navigated: true };
   }
   /** Closes the browser. A kept browser carries the chat, so closing its window leaves it running. */

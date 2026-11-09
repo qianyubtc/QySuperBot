@@ -20,5 +20,7 @@ export function createBinanceChatClient(environment: {
   WebSocket?: unknown;
   createSocket?: (url: string) => Promise<unknown>;
   beforeSend?: (groupId: string) => Promise<void>;
+  /** Domains allowed to serve this session's IM socket and media; Binance's own by default. */
+  isHost?: (hostname: string) => boolean;
   managementEnabled?: boolean;
 }): ChatClient;
